@@ -69,8 +69,20 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 #define MAX_TARGET_ANGLE_PRO 26   // Max recommended value: 32
 
 // Default control terms for EVO 2
-#define KP 0.32       
-#define KD 0.050     
+//#define KP 0.32
+//#define KD 0.050
+//#define KP_THROTTLE 0.080
+//#define KI_THROTTLE 0.1
+
+// ROBOT TALL
+//#define KP 0.27
+//#define KD 0.138
+//#define KP_THROTTLE 0.080
+//#define KI_THROTTLE 0.1
+
+// ROBOT MEDIUM (45)
+#define KP 0.24
+#define KD 0.114
 #define KP_THROTTLE 0.080 
 #define KI_THROTTLE 0.1
 
@@ -96,17 +108,17 @@ float Kit_old;
 #define ANGLE_OFFSET 0.0  // Offset angle for balance (to compensate robot own weight distribution)
 
 // Servo definitions
-#define SERVO_AUX_NEUTRO 90  // Servo neutral position in degrees
+#define SERVO_AUX_NEUTRO 90 + 45 // Servo neutral position in degrees
 #define SERVO_MIN_PULSEWIDTH 0
 #define SERVO_MAX_PULSEWIDTH 180
 
-#define SERVO2_NEUTRO 90
+#define SERVO2_NEUTRO 90 - 45
 #define SERVO2_RANGE 180
 
 
 // Telemetry
 #define TELEMETRY_BATTERY 1
-#define TELEMETRY_ANGLE 1
+#define TELEMETRY_ANGLE 0
 //#define TELEMETRY_DEBUG 1  // Dont use TELEMETRY_ANGLE and TELEMETRY_DEBUG at the same time!
 
 #define ZERO_SPEED 65535
@@ -312,7 +324,7 @@ void setup()
 
   // Init servos
   Serial.println("Servo init");
-  BROBOT_initServo();
+//  BROBOT_initServo();
 
   myservo1.attach(4);
   myservo2.attach(5);
@@ -660,4 +672,3 @@ void loop()
 #endif
   }  // End of slow loop
 }
-
