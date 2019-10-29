@@ -212,13 +212,24 @@ int16_t OSCmove_steps2;
 // INITIALIZATION
 void setup()
 {
+  // Enable servos (fan MOSFET on RAMPS)
+  pinMode(9, OUTPUT);
+  digitalWrite(9, HIGH);
+  
   // STEPPER PINS ON JJROBOTS BROBOT BRAIN BOARD
-  pinMode(4, OUTPUT); // ENABLE MOTORS
-  pinMode(7, OUTPUT); // STEP MOTOR 1 PORTE,6
-  pinMode(8, OUTPUT); // DIR MOTOR 1  PORTB,4
+  pinMode(38, OUTPUT); // ENABLE MOTOR1
+  pinMode(A2, OUTPUT); // ENABLE MOTOR2
+  pinMode(24, OUTPUT); // ENABLE KNEE1
+  pinMode(30, OUTPUT); // ENABLE KNEE2
+
+  pinMode(A0, OUTPUT); // --- STEP MOTOR 1
+  pinMode(A1, OUTPUT); // --- DIR MOTOR 1
+  pinMode(A6, OUTPUT); // --- STEP MOTOR 2 
+  pinMode(A7, OUTPUT); // --- DIR MOTOR 2
   pinMode(12, OUTPUT); // STEP MOTOR 2 PORTD,6
   pinMode(5, OUTPUT); // DIR MOTOR 2  PORTC,6
-  digitalWrite(4, HIGH);  // Disable motors
+  digitalWrite(38, HIGH);  // Disable motors
+  digitalWrite(A2, HIGH);  // Disable motors
   /*
   pinMode(10, OUTPUT);  // Servo1 (arm)
   pinMode(13, OUTPUT);  // Servo2
@@ -303,10 +314,10 @@ void setup()
   Serial.println("Servo init");
   BROBOT_initServo();
 
-  myservo1.attach(10);
-  myservo2.attach(13);
+  myservo1.attach(4);
+  myservo2.attach(5);
   myservo1.write(SERVO_AUX_NEUTRO);
-  myservo2.write(SERVO_AUX_NEUTRO);
+  myservo2.write(SERVO2_NEUTRO);
   SoftwareServo::refresh();
 
   // STEPPER MOTORS INITIALIZATION
@@ -327,7 +338,8 @@ void setup()
   delay(200);
 
   // Enable stepper drivers and TIMER interrupts
-  digitalWrite(4, LOW);   // Enable stepper drivers
+  digitalWrite(38, LOW);   // Enable stepper drivers
+  digitalWrite(A2, LOW);
   // Enable TIMERs interrupts
   TIMSK1 |= (1 << OCIE1A); // Enable Timer1 interrupt
   TIMSK3 |= (1 << OCIE1A); // Enable Timer1 interrupt
@@ -530,14 +542,16 @@ void loop()
     if ((angle_adjusted < angle_ready) && (angle_adjusted > -angle_ready)) // Is robot ready (upright?)
     {
       // NORMAL MODE
-      digitalWrite(4, LOW);  // Motors enable
+      digitalWrite(38, LOW);  // Motors enable
+      digitalWrite(A2, LOW);
       // NOW we send the commands to the motors
       setMotorSpeedM1(motor1);
       setMotorSpeedM2(motor2);
     }
     else   // Robot not ready (flat), angle > angle_ready => ROBOT OFF
     {
-      digitalWrite(4, HIGH);  // Disable motors
+      digitalWrite(38, HIGH);  // Disable motors
+      digitalWrite(A2, HIGH);
       setMotorSpeedM1(0);
       setMotorSpeedM2(0);
       PID_errorSum = 0;  // Reset PID I term
