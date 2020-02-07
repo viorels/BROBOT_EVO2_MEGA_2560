@@ -32,31 +32,9 @@
 // We have a PI controller for speed control and a PD controller for stability (robot angle)
 // The output of the control (motors speed) is integrated so it´s really an acceleration not an speed.
 
-// We control the robot from a WIFI module using OSC standard UDP messages
-// You need an OSC app to control de robot (Custom free JJRobots APP for android, and TouchOSC APP for IOS)
-// Join the module Wifi Access Point (by default: JJROBOTS_XX) with your Smartphone/Tablet...
-//   Wifi password: 87654321
-// For TouchOSC users (IOS): Install the BROBOT layout into the OSC app (Touch OSC) and start play! (read the project page)
-// OSC controls:
-//    fader1: Throttle (0.0-1.0) OSC message: /1/fader1
-//    fader2: Steering (0.0-1.0) OSC message: /1/fader2
-//    push1: Move servo arm (and robot raiseup) OSC message /1/push1
-//    if you enable the touchMessage on TouchOSC options, controls return to center automatically when you lift your fingers
-//    PRO mode (PRO button). On PRO mode steering and throttle are more aggressive
-//    PAGE2: PID adjustements [optional][dont touch if you dont know what you are doing...;-) ]
-
 #include <Wire.h>
 #include <SoftwareServo.h>
 SoftwareServo myservo1,myservo2;  // create servo object to control two servos
-
-// Uncomment this lines to connect to an external Wifi router (join an existing Wifi network)
-//#define EXTERNAL_WIFI
-//#define WIFI_SSID "YOUR_WIFI"
-//#define WIFI_PASSWORD "YOUR_PASSWORD"
-//#define WIFI_IP "192.168.1.101"  // Force ROBOT IP
-//#define TELEMETRY "192.168.1.38" // Tlemetry server port 2223
-
-#define TELEMETRY "192.168.4.2" // Default telemetry server (first client) port 2223
 
 // NORMAL MODE PARAMETERS (MAXIMUN SETTINGS)
 #define MAX_THROTTLE 550
@@ -118,8 +96,6 @@ float Kit_old;
 
 // Telemetry
 #define TELEMETRY_BATTERY 1
-#define TELEMETRY_ANGLE 0
-//#define TELEMETRY_DEBUG 1  // Dont use TELEMETRY_ANGLE and TELEMETRY_DEBUG at the same time!
 
 #define ZERO_SPEED 65535
 #define MAX_ACCEL 14      // Maximun motor acceleration (MAX RECOMMENDED VALUE: 20) (default:14)
@@ -133,9 +109,6 @@ float Kit_old;
 #define SET(x,y) (x|=(1<<y))
 #define RAD2GRAD 57.2957795
 #define GRAD2RAD 0.01745329251994329576923690768489
-
-String MAC;  // MAC address of Wifi module
-String tempstring;
 
 unsigned int testVal = 0;
 uint8_t cascade_control_loop_counter = 0;
@@ -242,14 +215,8 @@ void setup()
   pinMode(5, OUTPUT); // DIR MOTOR 2  PORTC,6
   digitalWrite(38, HIGH);  // Disable motors
   digitalWrite(A2, HIGH);  // Disable motors
-  /*
-  pinMode(10, OUTPUT);  // Servo1 (arm)
-  pinMode(13, OUTPUT);  // Servo2
-  */
+
   Serial.begin(115200); // Serial output to console
-  
-  Serial1.begin(115200);
-  OSC_init();
 
   // Initialize I2C bus (MPU6050 is connected via I2C)
   Wire.begin();
@@ -265,62 +232,8 @@ void setup()
   MPU6050_setup();  // setup MPU6050 IMU
   delay(500);
 
-  // With the new ESP8266 WIFI MODULE WE NEED TO MAKE AN INITIALIZATION PROCESS
-  Serial.println("WIFI init");
-  Serial1.flush();
-  Serial1.print("+++");  // To ensure we exit the transparent transmision mode
-  delay(100);
-  ESPsendCommand("AT", "OK", 1);
-  ESPsendCommand("AT+RST", "OK", 2); // ESP Wifi module RESET
-  ESPwait("ready", 6);
-  ESPsendCommand("AT+GMR", "OK", 5);
-
-#ifdef EXTERNAL_WIFI
-  ESPsendCommand("AT+CWQAP", "OK", 3);
-  ESPsendCommand("AT+CWMODE=1", "OK", 3);
-  //String auxCommand = (String)"AT+CWJAP="+WIFI_SSID+","+WIFI_PASSWORD;
-  char auxCommand[90] = "AT+CWJAP=\"";
-  strcat(auxCommand, WIFI_SSID);
-  strcat(auxCommand, "\",\"");
-  strcat(auxCommand, WIFI_PASSWORD);
-  strcat(auxCommand, "\"");
-  ESPsendCommand(auxCommand, "OK", 14);
-#ifdef WIFI_IP
-  strcpy(auxCommand, "AT+CIPSTA=\"");
-  strcat(auxCommand, WIFI_IP);
-  strcat(auxCommand, "\"");
-  ESPsendCommand(auxCommand, "OK", 4);
-#endif
-  ESPsendCommand("AT+CIPSTA?", "OK", 4);
-#else  // Deafault : we generate a wifi network
-  Serial1.println("AT+CIPSTAMAC?");
-  ESPgetMac();
-  //Serial.print("MAC:");
-  //Serial.println(MAC);
-  delay(200);
-  ESPsendCommand("AT+CWQAP", "OK", 3);
-  ESPsendCommand("AT+CWMODE=2", "OK", 3); // Soft AP mode
-  // Generate Soft AP. SSID=JJROBOTS, PASS=87654321
-  char *cmd =  "AT+CWSAP=\"JJROBOTS_XX\",\"87654321\",5,3";
-  // Update XX characters with MAC address (last 2 characters)
-  cmd[19] = MAC[10];
-  cmd[20] = MAC[11];
-  ESPsendCommand(cmd, "OK", 6);
-#endif
-  // Start UDP SERVER on port 2222, telemetry port 2223
-  Serial.println("Start UDP server");
-  ESPsendCommand("AT+CIPMUX=0", "OK", 3);  // Single connection mode
-  ESPsendCommand("AT+CIPMODE=1", "OK", 3); // Transparent mode
-  char Telemetry[80];
-  strcpy(Telemetry, "AT+CIPSTART=\"UDP\",\"");
-  strcat(Telemetry, TELEMETRY);
-  strcat(Telemetry, "\",2223,2222,0");
-  ESPsendCommand(Telemetry, "OK", 3); 
-
   // Calibrate gyros
   MPU6050_calibrate();
-
-  ESPsendCommand("AT+CIPSEND", ">", 2); // Start transmission (transparent mode)
 
   // Init servos
   Serial.println("Servo init");
@@ -388,13 +301,14 @@ void setup()
   Serial.println("BROBOT by JJROBOTS v2.82");
   Serial.println("Start...");
   timer_old = micros();
+
+  IBus.begin(Serial1);
 }
 
 
 // MAIN LOOP
 void loop()
-{
-  OSC_MsgRead();  // Read UDP OSC messages
+{  
   if (OSCnewMessage)
   {
     OSCnewMessage = 0;
@@ -453,7 +367,7 @@ void loop()
     }
     else if (OSCpage == 2) { // OSC page 2
       // Check for new user control parameters
-      readControlParameters();
+//      readControlParameters();
     }
 #if DEBUG==1
     Serial.print(throttle);
