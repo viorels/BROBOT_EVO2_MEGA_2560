@@ -36,6 +36,8 @@
 #include <SoftwareServo.h>
 SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 
+#include "FlySkyIBus.h"
+
 // NORMAL MODE PARAMETERS (MAXIMUN SETTINGS)
 #define MAX_THROTTLE 550
 #define MAX_STEERING 140
@@ -64,6 +66,13 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 #define KP_THROTTLE 0.080 
 #define KI_THROTTLE 0.1
 
+// ROBOT LOW
+//#define KP 0.2
+//#define KD 0.1
+//#define KP_THROTTLE 0.080
+//#define KI_THROTTLE 0.1
+
+
 float Kpu_old;
 float Kdu_old;
 float Kpt_old;
@@ -86,11 +95,11 @@ float Kit_old;
 #define ANGLE_OFFSET 0.0  // Offset angle for balance (to compensate robot own weight distribution)
 
 // Servo definitions
-#define SERVO_AUX_NEUTRO 90 + 45 // Servo neutral position in degrees
+#define SERVO_AUX_NEUTRO 90 // Servo neutral position in degrees
 #define SERVO_MIN_PULSEWIDTH 0
 #define SERVO_MAX_PULSEWIDTH 180
 
-#define SERVO2_NEUTRO 90 - 45
+#define SERVO2_NEUTRO 90
 #define SERVO2_RANGE 180
 
 
@@ -271,7 +280,7 @@ void setup()
   
   
   // Little motor vibration and servo move to indicate that robot is ready
-  for (uint8_t k = 0; k < 5; k++)
+  for (uint8_t k = 0; k < 1; k++)
   {
     /*setMotorSpeedM1(5);
     setMotorSpeedM2(5);
@@ -308,7 +317,9 @@ void setup()
 
 // MAIN LOOP
 void loop()
-{  
+{
+  IBus.loop();
+  
   if (OSCnewMessage)
   {
     OSCnewMessage = 0;
@@ -395,6 +406,7 @@ void loop()
       angle_adjusted_filtered = angle_adjusted_filtered*0.99 + MPU_sensor_angle*0.01;
       
 #if DEBUG==1
+/*
     Serial.print(dt);
     Serial.print(" ");
     Serial.print(angle_offset);
@@ -402,6 +414,7 @@ void loop()
     Serial.print(angle_adjusted);
     Serial.print(",");
     Serial.println(angle_adjusted_filtered);
+*/
 #endif
     //Serial.print("\t");
 
@@ -494,22 +507,14 @@ void loop()
       steering = 0;
     }
 
-    // Push1 Move servo arm
-    if (OSCpush[0])  // Move arm
-    {
-      if (angle_adjusted > -40)
-        myservo1.write(SERVO_MIN_PULSEWIDTH);
-      else
-        myservo1.write(SERVO_MAX_PULSEWIDTH);
-        SoftwareServo::refresh();
-    }
-    else
-      myservo1.write(SERVO_AUX_NEUTRO);
-      SoftwareServo::refresh();
+    if (IBus.isActive()) {
+      int height = (IBus.readChannel(2) - 1000) / 11.2;
+      Serial.println(height);
 
-    // Servo2
-    myservo2.write(SERVO2_NEUTRO + (OSCfader[2] - 0.5) * SERVO2_RANGE);
-    SoftwareServo::refresh();
+      myservo1.write(SERVO_AUX_NEUTRO + height);
+      myservo2.write(SERVO2_NEUTRO - height);
+      SoftwareServo::refresh();
+    }
 
     // Normal condition?
     if ((angle_adjusted < 56) && (angle_adjusted > -56))
