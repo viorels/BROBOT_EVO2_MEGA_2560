@@ -40,8 +40,8 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 
 // ---------- CALIBRATION ----------
 
-#define ENC_1_ZERO 4436   // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
-#define ENC_2_ZERO 261    // leg is crouched, encoder goes up from here
+#define ENC_1_ZERO 4562 + 0      // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
+#define ENC_2_ZERO 358 - 100  // leg is crouched, encoder goes up from here
 
 #define SERVO1_NEUTRAL 90 // Servo neutral position in degrees
 #define SERVO1_MIN_PULSE  500
@@ -110,8 +110,8 @@ float Kit_old;
 #define KD_POSITION 0.45  
 //#define KI_POSITION 0.02
 
-#define KNEE_KP 0.15
-#define KNEE_KD 0.6
+#define KNEE_KP 0.10  // 0.15 / 0.6 is best
+#define KNEE_KD 0.5
 
 // Control gains for raiseup (the raiseup movement requiere special control parameters)
 #define KP_RAISEUP 0.1   
@@ -126,7 +126,7 @@ float Kit_old;
 #define ANGLE_OFFSET 0.0  // Offset angle for balance (to compensate robot own weight distribution)
 
 // Telemetry
-#define TELEMETRY_BATTERY 1
+#define TELEMETRY_BATTERY 0
 
 #define ZERO_SPEED 65535
 #define MAX_ACCEL 14      // Maximun motor acceleration (MAX RECOMMENDED VALUE: 20) (default:14)
@@ -249,12 +249,15 @@ tAS5047 encoder2 = { .selectPin = ENC_2_SELECT };
 
 // INITIALIZATION
 
-void setup_encoders() {
+void setupEncoders() {
   AS5047_SPI_Init();
   AS5047_Init(encoder1);
   AS5047_Init(encoder2);
+  syncEncoders(100);
+}
 
-  int samples = 100;
+void syncEncoders(int samples) {
+  // TODO: warn if spread is too high
 
   long avgAngle1 = 0, avgAngle2 = 0;
   for (int i = 0; i < samples; i++) {
@@ -265,11 +268,11 @@ void setup_encoders() {
   }
   avgAngle1 /= samples;
   avgAngle2 /= samples;
-  Serial.print("Initial position left: "); Serial.println(avgAngle1);
+  Serial.print("Position LEFT: "); Serial.println(avgAngle1);
   // calibrate left knee
   steps_k1 = (avgAngle1 - ENC_1_ZERO) / 8192.0 * KNEE_HALF_TURN;
 
-  Serial.print("Initial position right: "); Serial.println(avgAngle2);
+  Serial.print("Position RIGHT: "); Serial.println(avgAngle2);
   // calibrate right knee
   steps_k2 = ((avgAngle2 - ENC_2_ZERO) / 8192.0 * KNEE_HALF_TURN);
 }
@@ -331,7 +334,7 @@ void setup()
   myservo2.setMinimumPulse(SERVO2_MIN_PULSE);
   myservo2.setMaximumPulse(SERVO2_MAX_PULSE);
 
-  setup_encoders();
+  setupEncoders();
 
   // STEPPER MOTORS INITIALIZATION
   Serial.println("Steppers init");
@@ -378,28 +381,23 @@ void setup()
   TIMSK5 |= (1 << OCIE5A); // Enable Timer5 interrupt
   
   // Little motor vibration and servo move to indicate that robot is ready
-/*
-  for (uint8_t k = 0; k < 1; k++)
+  for (uint8_t k = 0; k < 2; k++)
   {
     setMotorSpeedM1(5);
     setMotorSpeedM2(5);
-    
-    myservo1.write(SERVO_AUX_NEUTRO + 10);
-    myservo2.write(SERVO2_NEUTRO + 10);
+    myservo1.write(SERVO1_NEUTRAL + 5);
+    myservo2.write(SERVO2_NEUTRAL - 5);
     SoftwareServo::refresh();
     delay(200);
-    setMotorSpeedM1(-5);
-    setMotorSpeedM2(-5);
     
-    myservo1.write(SERVO_AUX_NEUTRO - 10);
-    myservo2.write(SERVO2_NEUTRO - 10);
+    setMotorSpeedM1(0);
+    setMotorSpeedM2(0);
+    myservo1.write(SERVO1_NEUTRAL);
+    myservo2.write(SERVO2_NEUTRAL);
     SoftwareServo::refresh();
     delay(200);
   }
-  myservo1.write(SERVO_AUX_NEUTRO);
-  myservo2.write(SERVO2_NEUTRO);
-  SoftwareServo::refresh();
-*/
+
 
  #if TELEMETRY_BATTERY==1
   BatteryValue = BROBOT_readBattery(true);
@@ -584,11 +582,13 @@ void loop()
       angle_ready = 82;
     else
       angle_ready = 74;  // Default angle
-    if ((angle_adjusted < angle_ready) && (angle_adjusted > -angle_ready)) // Is robot ready (upright?)
+    if (bot_enabled && (angle_adjusted < angle_ready) && (angle_adjusted > -angle_ready)) // Is robot ready (upright?)
     {
       // NORMAL MODE
       digitalWrite(38, LOW);  // Motors enable
       digitalWrite(A2, LOW);
+      digitalWrite(LEFT_KNEE_EN, LOW);
+      digitalWrite(RIGHT_KNEE_EN, LOW);
       // NOW we send the commands to the motors
       setMotorSpeedM1(motor1);
       setMotorSpeedM2(motor2);
@@ -597,8 +597,12 @@ void loop()
     {
       digitalWrite(38, HIGH);  // Disable motors
       digitalWrite(A2, HIGH);
+      digitalWrite(LEFT_KNEE_EN, HIGH);   // this needs syncEncoders after restart
+      digitalWrite(RIGHT_KNEE_EN, HIGH);
       setMotorSpeedM1(0);
       setMotorSpeedM2(0);
+      setMotorSpeedK1(0);
+      setMotorSpeedK2(0);
       PID_errorSum = 0;  // Reset PID I term
       Kp = KP_RAISEUP;   // CONTROL GAINS FOR RAISE UP
       Kd = KD_RAISEUP;
@@ -620,7 +624,11 @@ void loop()
       remote_chan3 = IBus.readChannel(2) * alpha + remote_chan3 * (1-alpha);
       remote_chan4 = IBus.readChannel(3) * alpha + remote_chan4 * (1-alpha);
 
-      bot_enabled = IBus.readChannel(6) > 1999;
+      bool enabled = IBus.readChannel(6) > 1999;
+      if (!bot_enabled && enabled) {
+        syncEncoders(100);
+      }
+      bot_enabled = enabled;
 
       throttle = ((remote_chan1 - 1500) / 1000.0) * max_throttle;
       steering = ((remote_chan2 - 1500) / 1000.0) * max_steering;
@@ -639,7 +647,9 @@ void loop()
       myservo2.write(constrain(SERVO2_NEUTRAL + SERVO2_OFFSET - 90 + (abs(steps_k2) * 90 / (float)KNEE_HALF_TURN), 0, 110));
 //      myservo1.writeMicroseconds(constrain(SERVO1_NEUTRAL + 1000 - (abs(steps_k1) / 1.8), 1300, 2500));
 //      myservo2.writeMicroseconds(constrain(SERVO2_NEUTRAL - 1000 + steps_k2 / 1.8, 500, 1700));
-      SoftwareServo::refresh();
+      if (bot_enabled) {
+        SoftwareServo::refresh();
+      }
     }
 
     // Normal condition?
