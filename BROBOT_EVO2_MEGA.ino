@@ -35,8 +35,21 @@
 #include <Wire.h>
 #include <SoftwareServo.h>
 SoftwareServo myservo1,myservo2;  // create servo object to control two servos
-
+#include "AS5047.h"
 #include "FlySkyIBus.h"
+
+// ---------- CALIBRATION ----------
+
+#define ENC_1_ZERO 4270   // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
+#define ENC_2_ZERO 565    // leg is crouched, encoder goes up from here
+
+#define SERVO1_NEUTRAL 90 // Servo neutral position in degrees
+// #define SERVO1_MIN
+// #define SERVO1_MAX
+
+#define SERVO2_NEUTRAL 90
+
+// ---------- END CALIBRATION ----------
 
 // NORMAL MODE PARAMETERS (MAXIMUN SETTINGS)
 #define MAX_THROTTLE 550
@@ -47,6 +60,19 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 #define MAX_THROTTLE_PRO 780   // Max recommended value: 860
 #define MAX_STEERING_PRO 260   // Max recommended value: 280
 #define MAX_TARGET_ANGLE_PRO 26   // Max recommended value: 32
+
+#define LEFT_KNEE_STEP 36   // Extruder 1, 1/2 stepping
+#define LEFT_KNEE_DIR 34    // PORTC, 1
+#define LEFT_KNEE_EN 30     // PORTC, 3
+
+#define RIGHT_KNEE_STEP 26  // Extruder 0, 1/2 stepping
+#define RIGHT_KNEE_DIR 28   // PORTA, 4
+#define RIGHT_KNEE_EN 24    // PORTA, 6
+
+#define KNEE_HALF_TURN 7200  // 200 * 8 * 9 * 1/2 (steps/360 * micro * belt * half turn)
+
+#define ENC_1_SELECT 17 // pin 17 is used for selecting the seconds encoder
+#define ENC_2_SELECT 16
 
 // Default control terms for EVO 2
 //#define KP 0.32
@@ -82,6 +108,9 @@ float Kit_old;
 #define KD_POSITION 0.45  
 //#define KI_POSITION 0.02
 
+#define KNEE_KP 0.15
+#define KNEE_KD 0.6
+
 // Control gains for raiseup (the raiseup movement requiere special control parameters)
 #define KP_RAISEUP 0.1   
 #define KD_RAISEUP 0.16   
@@ -94,15 +123,6 @@ float Kit_old;
 
 #define ANGLE_OFFSET 0.0  // Offset angle for balance (to compensate robot own weight distribution)
 
-// Servo definitions
-#define SERVO_AUX_NEUTRO 90 // Servo neutral position in degrees
-#define SERVO_MIN_PULSEWIDTH 0
-#define SERVO_MAX_PULSEWIDTH 180
-
-#define SERVO2_NEUTRO 90
-#define SERVO2_RANGE 180
-
-
 // Telemetry
 #define TELEMETRY_BATTERY 1
 
@@ -110,6 +130,7 @@ float Kit_old;
 #define MAX_ACCEL 14      // Maximun motor acceleration (MAX RECOMMENDED VALUE: 20) (default:14)
 
 #define MICROSTEPPING 16   // 8 or 16 for 1/8 or 1/16 driver microstepping (default:16)
+#define KNEE_MICROSTEPPING 8
 
 #define DEBUG 1   // 0 = No debug info (default) DEBUG 1 for console output
 
@@ -187,6 +208,20 @@ int16_t actual_robot_speed;        // overall robot speed (measured from stepper
 int16_t actual_robot_speed_Old;
 float estimated_speed_filtered;    // Estimated robot speed
 
+// Knee
+int16_t speed_k1, speed_k2;        // Actual speed of motors
+int8_t  dir_k1, dir_k2;            // Actual direction of steppers motors
+volatile int32_t steps_k1;
+volatile int32_t steps_k2;
+int knee1_control = 0, knee2_control = 0;
+int target_steps_k1, target_steps_k2;
+
+// Remote
+int remote_chan0 = 1500;
+int remote_chan1 = 1500;
+int remote_chan2 = 1000;
+int remote_chan3 = 1500;
+
 // OSC output variables
 uint8_t OSCpage;
 uint8_t OSCnewMessage;
@@ -202,8 +237,36 @@ int16_t OSCmove_speed;
 int16_t OSCmove_steps1;
 int16_t OSCmove_steps2;
 
+tAS5047 encoder1 = { .selectPin = ENC_1_SELECT };
+tAS5047 encoder2 = { .selectPin = ENC_2_SELECT };
 
 // INITIALIZATION
+
+void setup_encoders() {
+  AS5047_SPI_Init();
+  AS5047_Init(encoder1);
+  AS5047_Init(encoder2);
+
+  int samples = 100;
+
+  long avgAngle1 = 0, avgAngle2 = 0;
+  for (int i = 0; i < samples; i++) {
+    AS5047_Read(encoder1, CMD_R_ANGLECOM);
+    avgAngle1 += encoder1.data.ANGLECOM.DAECANG;
+    AS5047_Read(encoder2, CMD_R_ANGLECOM);
+    avgAngle2 += encoder2.data.ANGLECOM.DAECANG;
+  }
+  avgAngle1 /= samples;
+  avgAngle2 /= samples;
+  Serial.print("Initial position left: "); Serial.println(avgAngle1);
+  // calibrate left knee
+  steps_k1 = (avgAngle1 - ENC_1_ZERO) / 8192.0 * KNEE_HALF_TURN;
+
+  Serial.print("Initial position right: "); Serial.println(avgAngle2);
+  // calibrate right knee
+  steps_k2 = ((avgAngle2 - ENC_2_ZERO) / 8192.0 * KNEE_HALF_TURN);
+}
+
 void setup()
 {
   // Enable servos (fan MOSFET on RAMPS)
@@ -222,16 +285,22 @@ void setup()
   pinMode(A7, OUTPUT); // --- DIR MOTOR 2
   pinMode(12, OUTPUT); // STEP MOTOR 2 PORTD,6
   pinMode(5, OUTPUT); // DIR MOTOR 2  PORTC,6
-  digitalWrite(38, HIGH);  // Disable motors
-  digitalWrite(A2, HIGH);  // Disable motors
+  pinMode(LEFT_KNEE_EN, OUTPUT);
+  pinMode(RIGHT_KNEE_EN, OUTPUT);
 
+  // Disable motors
+  digitalWrite(38, HIGH);
+  digitalWrite(A2, HIGH);
+  digitalWrite(LEFT_KNEE_EN, HIGH);
+  digitalWrite(RIGHT_KNEE_EN, HIGH);
+  
   Serial.begin(115200); // Serial output to console
 
   // Initialize I2C bus (MPU6050 is connected via I2C)
   Wire.begin();
 
 #if DEBUG > 0
-  delay(9000);
+  delay(2000);
 #else
   delay(1000);
 #endif
@@ -250,9 +319,8 @@ void setup()
 
   myservo1.attach(4);
   myservo2.attach(5);
-  myservo1.write(SERVO_AUX_NEUTRO);
-  myservo2.write(SERVO2_NEUTRO);
-  SoftwareServo::refresh();
+
+  setup_encoders();
 
   // STEPPER MOTORS INITIALIZATION
   Serial.println("Steppers init");
@@ -269,29 +337,48 @@ void setup()
   OCR3A = ZERO_SPEED;   // Motor stopped
   dir_M2 = 0;
   TCNT3 = 0;
+
+  // KNEE STEPPERS INITIALIZATION
+  // MOTOR1 => TIMER4
+  TCCR4A = 0;                       // Timer4 CTC mode 4, OCxA,B outputs disconnected
+  TCCR4B = (1 << WGM12) | (1 << CS11); // Prescaler=8, => 2Mhz
+  OCR4A = ZERO_SPEED;               // Motor stopped
+  dir_k1 = 0;
+  TCNT4 = 0;
+
+  // MOTOR2 => TIMER5
+  TCCR5A = 0;                       // Timer5 CTC mode 4, OCxA,B outputs disconnected
+  TCCR5B = (1 << WGM32) | (1 << CS31); // Prescaler=8, => 2Mhz
+  OCR5A = ZERO_SPEED;   // Motor stopped
+  dir_k2 = 0;
+  TCNT5 = 0;  
   delay(200);
 
   // Enable stepper drivers and TIMER interrupts
   digitalWrite(38, LOW);   // Enable stepper drivers
   digitalWrite(A2, LOW);
+  digitalWrite(LEFT_KNEE_EN, LOW);
+  digitalWrite(RIGHT_KNEE_EN, LOW);
+  
   // Enable TIMERs interrupts
   TIMSK1 |= (1 << OCIE1A); // Enable Timer1 interrupt
-  TIMSK3 |= (1 << OCIE1A); // Enable Timer1 interrupt
-  
+  TIMSK3 |= (1 << OCIE1A); // Enable Timer3 interrupt
+  TIMSK4 |= (1 << OCIE4A); // Enable Timer4 interrupt
+  TIMSK5 |= (1 << OCIE5A); // Enable Timer5 interrupt
   
   // Little motor vibration and servo move to indicate that robot is ready
+/*
   for (uint8_t k = 0; k < 1; k++)
   {
-    /*setMotorSpeedM1(5);
+    setMotorSpeedM1(5);
     setMotorSpeedM2(5);
-    */
+    
     myservo1.write(SERVO_AUX_NEUTRO + 10);
     myservo2.write(SERVO2_NEUTRO + 10);
     SoftwareServo::refresh();
     delay(200);
-    /* setMotorSpeedM1(-5);
+    setMotorSpeedM1(-5);
     setMotorSpeedM2(-5);
-    */
     
     myservo1.write(SERVO_AUX_NEUTRO - 10);
     myservo2.write(SERVO2_NEUTRO - 10);
@@ -301,6 +388,7 @@ void setup()
   myservo1.write(SERVO_AUX_NEUTRO);
   myservo2.write(SERVO2_NEUTRO);
   SoftwareServo::refresh();
+*/
 
  #if TELEMETRY_BATTERY==1
   BatteryValue = BROBOT_readBattery(true);
@@ -473,6 +561,12 @@ void loop()
     motor1 = constrain(motor1, -MAX_CONTROL_OUTPUT, MAX_CONTROL_OUTPUT);
     motor2 = constrain(motor2, -MAX_CONTROL_OUTPUT, MAX_CONTROL_OUTPUT);
 
+    // Knees
+    knee1_control = positionPDControl(steps_k1, target_steps_k1, KNEE_KP, KNEE_KD, speed_k1);
+    setMotorSpeedK1(constrain(knee1_control, -MAX_CONTROL_OUTPUT, MAX_CONTROL_OUTPUT));
+    knee2_control = positionPDControl(steps_k2, target_steps_k2, KNEE_KP, KNEE_KD, speed_k2);
+    setMotorSpeedK2(constrain(knee2_control, -MAX_CONTROL_OUTPUT, MAX_CONTROL_OUTPUT));
+
     int angle_ready;
     if (OSCpush[0])     // If we press the SERVO button we start to move
       angle_ready = 82;
@@ -508,11 +602,21 @@ void loop()
     }
 
     if (IBus.isActive()) {
-      int height = (IBus.readChannel(2) - 1000) / 11.2;
-      Serial.println(height);
+      float alpha = 0.5;
+      remote_chan2 = IBus.readChannel(2) * alpha + remote_chan2 * (1-alpha);
+      remote_chan3 = IBus.readChannel(3) * alpha + remote_chan3 * (1-alpha);
 
-      myservo1.write(SERVO_AUX_NEUTRO + height);
-      myservo2.write(SERVO2_NEUTRO - height);
+      int microsOffset = remote_chan2 - 1000;  // DS3225 Pulse width range: 500~2500 μsec
+      float balanceOffset = (remote_chan3 - 1500) / 500.0 * 0.1;
+      float height = microsOffset / 1000.0f;  // should be 1 - ...
+
+      target_steps_k1 = constrain((height + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
+      target_steps_k2 = constrain((height - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
+
+      myservo1.write(constrain(SERVO1_NEUTRAL + 90 - (abs(steps_k1) * 90 / (float)KNEE_HALF_TURN), 70, 180));
+      myservo2.write(constrain(SERVO2_NEUTRAL - 90 + (abs(steps_k2) * 90 / (float)KNEE_HALF_TURN), 0, 110));
+//      myservo1.writeMicroseconds(constrain(SERVO1_NEUTRAL + 1000 - (abs(steps_k1) / 1.8), 1300, 2500));
+//      myservo2.writeMicroseconds(constrain(SERVO2_NEUTRAL - 1000 + steps_k2 / 1.8, 500, 1700));
       SoftwareServo::refresh();
     }
 

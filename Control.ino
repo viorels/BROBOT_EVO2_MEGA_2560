@@ -178,3 +178,135 @@ void setMotorSpeedM2(int16_t tspeed)
   if (TCNT3 > OCR3A)
     TCNT3 = 0;
 }
+
+
+// ***** KNEE STEPPERS *****
+
+
+// TIMER 4 : STEPPER KNEE1 SPEED CONTROL
+ISR(TIMER4_COMPA_vect)
+{
+  if (dir_k1 == 0) // If we are not moving we dont generate a pulse
+    return;
+  // We generate 1us STEP pulse
+  SET(PORTC, 1); // STEP MOTOR 1
+  //delay_1us();
+  if (dir_k1 > 0)
+    steps_k1++;
+  else
+    steps_k1--;
+  CLR(PORTC, 1);
+}
+
+// Set speed of Stepper Knee1
+// tspeed could be positive or negative (reverse)
+void setMotorSpeedK1(int16_t tspeed)
+{
+  long timer_period;
+  int16_t speed;
+
+  // Limit max speed?
+
+  // WE LIMIT MAX ACCELERATION of the motors
+  if ((speed_k1 - tspeed) > MAX_ACCEL)
+    speed_k1 -= MAX_ACCEL;
+  else if ((speed_k1 - tspeed) < -MAX_ACCEL)
+    speed_k1 += MAX_ACCEL;
+  else
+    speed_k1 = tspeed;
+
+#if KNEE_MICROSTEPPING==16
+  speed = speed_k1 * 50; // Adjust factor from control output speed to real motor speed in steps/second
+#else
+  speed = speed_k1 * 25; // 1/8 Microstepping
+#endif
+
+  if (speed == 0)
+  {
+    timer_period = ZERO_SPEED;
+    dir_k1 = 0;
+  }
+  else if (speed > 0)
+  {
+    timer_period = 2000000 / speed; // 2Mhz timer
+    dir_k1 = 1;
+    SET(PORTC, 3); // DIR Motor 1 (Forward)
+  }
+  else
+  {
+    timer_period = 2000000 / -speed;
+    dir_k1 = -1;
+    CLR(PORTC, 3); // Dir Motor 1
+  }
+  if (timer_period > 65535)   // Check for minimun speed (maximun period without overflow)
+    timer_period = ZERO_SPEED;
+
+  OCR4A = timer_period;
+  // Check  if we need to reset the timer...
+  if (TCNT4 > OCR4A)
+    TCNT4 = 0;
+}
+
+// TIMER 5 : STEPPER KNEE2 SPEED CONTROL
+ISR(TIMER5_COMPA_vect)
+{
+  if (dir_k2 == 0) // If we are not moving we dont generate a pulse
+    return;
+  // We generate 1us STEP pulse
+  SET(PORTA, 4); // STEP MOTOR 2
+  //delay_1us();
+  if (dir_k2 > 0)
+    steps_k2++;
+  else
+    steps_k2--;
+  CLR(PORTA, 4);
+}
+
+// Set speed of Stepper Motor2
+// tspeed could be positive or negative (reverse)
+void setMotorSpeedK2(int16_t tspeed)
+{
+  long timer_period;
+  int16_t speed;
+
+  // Limit max speed?
+
+  // WE LIMIT MAX ACCELERATION of the motors
+  if ((speed_k2 - tspeed) > MAX_ACCEL)
+    speed_k2 -= MAX_ACCEL;
+  else if ((speed_k2 - tspeed) < -MAX_ACCEL)
+    speed_k2 += MAX_ACCEL;
+  else
+    speed_k2 = tspeed;
+
+#if KNEE_MICROSTEPPING==16
+  speed = speed_k2 * 50; // Adjust factor from control output speed to real motor speed in steps/second
+#else
+  speed = speed_k2 * 25; // 1/8 Microstepping
+#endif
+
+  if (speed == 0)
+  {
+    timer_period = ZERO_SPEED;
+    dir_k2 = 0;
+  }
+  else if (speed > 0)
+  {
+    timer_period = 2000000 / speed; // 2Mhz timer
+    dir_k2 = 1;
+    CLR(PORTA, 6);   // Dir Motor2 (Forward)
+  }
+  else
+  {
+    timer_period = 2000000 / -speed;
+    dir_k2 = -1;
+    SET(PORTA, 6);  // DIR Motor 2
+  }
+  if (timer_period > 65535)   // Check for minimun speed (maximun period without overflow)
+    timer_period = ZERO_SPEED;
+
+  OCR5A = timer_period;
+  // Check  if we need to reset the timer...
+  if (TCNT5 > OCR5A)
+    TCNT5 = 0;
+}
