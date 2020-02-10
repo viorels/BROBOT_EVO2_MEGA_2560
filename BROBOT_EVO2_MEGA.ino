@@ -40,14 +40,16 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 
 // ---------- CALIBRATION ----------
 
-#define ENC_1_ZERO 4270   // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
-#define ENC_2_ZERO 565    // leg is crouched, encoder goes up from here
+#define ENC_1_ZERO 4436   // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
+#define ENC_2_ZERO 261    // leg is crouched, encoder goes up from here
 
 #define SERVO1_NEUTRAL 90 // Servo neutral position in degrees
-// #define SERVO1_MIN
-// #define SERVO1_MAX
-
+#define SERVO1_MIN_PULSE  500
+#define SERVO1_MAX_PULSE  2500
 #define SERVO2_NEUTRAL 90
+#define SERVO2_OFFSET 5
+#define SERVO2_MIN_PULSE  500
+#define SERVO2_MAX_PULSE  2500
 
 // ---------- END CALIBRATION ----------
 
@@ -132,7 +134,7 @@ float Kit_old;
 #define MICROSTEPPING 16   // 8 or 16 for 1/8 or 1/16 driver microstepping (default:16)
 #define KNEE_MICROSTEPPING 8
 
-#define DEBUG 1   // 0 = No debug info (default) DEBUG 1 for console output
+#define DEBUG 0   // 0 = No debug info (default) DEBUG 1 for console output
 
 // AUX definitions
 #define CLR(x,y) (x&=(~(1<<y)))
@@ -215,6 +217,9 @@ volatile int32_t steps_k1;
 volatile int32_t steps_k2;
 int knee1_control = 0, knee2_control = 0;
 int target_steps_k1, target_steps_k2;
+
+long loopCount = 0;
+long loopCountStart = millis();
 
 // Remote
 int remote_chan0 = 1500;
@@ -318,7 +323,11 @@ void setup()
 //  BROBOT_initServo();
 
   myservo1.attach(4);
+  myservo1.setMinimumPulse(SERVO1_MIN_PULSE);
+  myservo1.setMaximumPulse(SERVO1_MAX_PULSE);
   myservo2.attach(5);
+  myservo2.setMinimumPulse(SERVO2_MIN_PULSE);
+  myservo2.setMaximumPulse(SERVO2_MAX_PULSE);
 
   setup_encoders();
 
@@ -406,6 +415,7 @@ void setup()
 // MAIN LOOP
 void loop()
 {
+  loopCount++;
   IBus.loop();
   
   if (OSCnewMessage)
@@ -642,6 +652,14 @@ void loop()
   if (loop_counter >= 15)
   {
     loop_counter = 0;
+
+#if DEBUG>0
+    // How fast is the main loop?
+    Serial.print(loopCount * 1000 / (millis() - loopCountStart));
+    Serial.println(" Hz");
+    loopCount = 0; loopCountStart = millis();
+#endif
+
     // Telemetry here?
 #if TELEMETRY_ANGLE==1
     char auxS[25];
