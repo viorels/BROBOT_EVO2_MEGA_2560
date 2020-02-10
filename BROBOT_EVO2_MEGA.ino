@@ -182,6 +182,7 @@ float PID_errorOld = 0;
 float PID_errorOld2 = 0;
 float setPointOld = 0;
 float target_angle;
+bool bot_enabled = false;
 int16_t throttle;
 float steering;
 float max_throttle = MAX_THROTTLE;
@@ -222,10 +223,11 @@ long loopCount = 0;
 long loopCountStart = millis();
 
 // Remote
-int remote_chan0 = 1500;
-int remote_chan1 = 1500;
-int remote_chan2 = 1000;
-int remote_chan3 = 1500;
+int remote_chan1 = 1500;  // turn left/right
+int remote_chan2 = 1500;  // forward/back
+int remote_chan3 = 1000;  // up/down
+int remote_chan4 = 1500;  // balance?
+float kPInput = 1, kDInput = 1;
 
 // OSC output variables
 uint8_t OSCpage;
@@ -560,7 +562,7 @@ void loop()
     // Stability control (100Hz loop): This is a PD controller.
     //    input: robot target angle(from SPEED CONTROL), variable: robot angle, output: Motor speed
     //    We integrate the output (sumatory), so the output is really the motor acceleration, not motor speed.
-    control_output += stabilityPDControl(dt, angle_adjusted, target_angle, Kp, Kd);
+    control_output += stabilityPDControl(dt, angle_adjusted, target_angle, Kp * kPInput, Kd * kDInput);
     control_output = constrain(control_output, -MAX_CONTROL_OUTPUT, MAX_CONTROL_OUTPUT); // Limit max output from control
 
     // The steering part from the user is injected directly to the output
@@ -612,19 +614,29 @@ void loop()
     }
 
     if (IBus.isActive()) {
-      float alpha = 0.5;
-      remote_chan2 = IBus.readChannel(2) * alpha + remote_chan2 * (1-alpha);
-      remote_chan3 = IBus.readChannel(3) * alpha + remote_chan3 * (1-alpha);
+      float alpha = 0.2;
+      remote_chan1 = IBus.readChannel(0) * alpha + remote_chan1 * (1-alpha);
+      remote_chan2 = IBus.readChannel(1) * alpha + remote_chan2 * (1-alpha);
+      remote_chan3 = IBus.readChannel(2) * alpha + remote_chan3 * (1-alpha);
+      remote_chan4 = IBus.readChannel(3) * alpha + remote_chan4 * (1-alpha);
 
-      int microsOffset = remote_chan2 - 1000;  // DS3225 Pulse width range: 500~2500 μsec
-      float balanceOffset = (remote_chan3 - 1500) / 500.0 * 0.1;
+      bot_enabled = IBus.readChannel(6) > 1999;
+
+      throttle = ((remote_chan1 - 1500) / 1000.0) * max_throttle;
+      steering = ((remote_chan2 - 1500) / 1000.0) * max_steering;
+
+      kPInput = ((float) IBus.readChannel(4)-1000)/500.0;  // normalize between 0 and 2 (-100% / +100%)
+      kDInput = ((float) IBus.readChannel(5)-1000)/500.0;
+
+      int microsOffset = remote_chan3 - 1000;  // DS3225 Pulse width range: 500~2500 μsec
+      float balanceOffset = (remote_chan4 - 1500) / 500.0 * 0.1;
       float height = microsOffset / 1000.0f;  // should be 1 - ...
 
       target_steps_k1 = constrain((height + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
       target_steps_k2 = constrain((height - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
 
       myservo1.write(constrain(SERVO1_NEUTRAL + 90 - (abs(steps_k1) * 90 / (float)KNEE_HALF_TURN), 70, 180));
-      myservo2.write(constrain(SERVO2_NEUTRAL - 90 + (abs(steps_k2) * 90 / (float)KNEE_HALF_TURN), 0, 110));
+      myservo2.write(constrain(SERVO2_NEUTRAL + SERVO2_OFFSET - 90 + (abs(steps_k2) * 90 / (float)KNEE_HALF_TURN), 0, 110));
 //      myservo1.writeMicroseconds(constrain(SERVO1_NEUTRAL + 1000 - (abs(steps_k1) / 1.8), 1300, 2500));
 //      myservo2.writeMicroseconds(constrain(SERVO2_NEUTRAL - 1000 + steps_k2 / 1.8, 500, 1700));
       SoftwareServo::refresh();
