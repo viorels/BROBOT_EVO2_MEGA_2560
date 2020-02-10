@@ -40,14 +40,14 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 
 // ---------- CALIBRATION ----------
 
-#define ENC_1_ZERO 4562 + 0      // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
-#define ENC_2_ZERO 358 - 100  // leg is crouched, encoder goes up from here
+#define ENC_1_ZERO 1200       // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
+#define ENC_2_ZERO 245        // leg is crouched, encoder goes up from here
 
 #define SERVO1_NEUTRAL 90 // Servo neutral position in degrees
 #define SERVO1_MIN_PULSE  500
 #define SERVO1_MAX_PULSE  2500
 #define SERVO2_NEUTRAL 90
-#define SERVO2_OFFSET 5
+#define SERVO2_OFFSET 3
 #define SERVO2_MIN_PULSE  500
 #define SERVO2_MAX_PULSE  2500
 
@@ -268,13 +268,14 @@ void syncEncoders(int samples) {
   }
   avgAngle1 /= samples;
   avgAngle2 /= samples;
-  Serial.print("Position LEFT: "); Serial.println(avgAngle1);
+
   // calibrate left knee
+  Serial.print("Position LEFT: "); Serial.println(avgAngle1);
   steps_k1 = (avgAngle1 - ENC_1_ZERO) / 8192.0 * KNEE_HALF_TURN;
 
-  Serial.print("Position RIGHT: "); Serial.println(avgAngle2);
   // calibrate right knee
-  steps_k2 = ((avgAngle2 - ENC_2_ZERO) / 8192.0 * KNEE_HALF_TURN);
+  Serial.print("Position RIGHT: "); Serial.println(avgAngle2);
+  steps_k2 = (avgAngle2 - ENC_2_ZERO) / 8192.0 * KNEE_HALF_TURN;
 }
 
 void setup()
@@ -624,14 +625,15 @@ void loop()
       remote_chan3 = IBus.readChannel(2) * alpha + remote_chan3 * (1-alpha);
       remote_chan4 = IBus.readChannel(3) * alpha + remote_chan4 * (1-alpha);
 
+      // TODO: this should ber reversed
+      steering = -1 * ((remote_chan1 - 1500) / 1000.0) * max_steering;
+      throttle = -1 * ((remote_chan2 - 1500) / 1000.0) * max_throttle;
+
       bool enabled = IBus.readChannel(6) > 1999;
       if (!bot_enabled && enabled) {
         syncEncoders(100);
       }
       bot_enabled = enabled;
-
-      throttle = ((remote_chan1 - 1500) / 1000.0) * max_throttle;
-      steering = ((remote_chan2 - 1500) / 1000.0) * max_steering;
 
       kPInput = ((float) IBus.readChannel(4)-1000)/500.0;  // normalize between 0 and 2 (-100% / +100%)
       kDInput = ((float) IBus.readChannel(5)-1000)/500.0;
