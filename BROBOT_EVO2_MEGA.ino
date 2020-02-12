@@ -71,10 +71,12 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 #define RIGHT_KNEE_DIR 28   // PORTA, 4
 #define RIGHT_KNEE_EN 24    // PORTA, 6
 
-#define KNEE_HALF_TURN 7200  // 200 * 8 * 9 * 1/2 (steps/360 * micro * belt * half turn)
+#define KNEE_FULL_TURN 14400  // 200 * 8 * 9 (steps/360 * micro * belt)
+#define KNEE_HALF_TURN 7200
 
 #define ENC_1_SELECT 17 // pin 17 is used for selecting the seconds encoder
 #define ENC_2_SELECT 16
+#define ENCODER_FULL_TURN pow(2, 14)
 
 // Default control terms for EVO 2
 //#define KP 0.32
@@ -219,6 +221,7 @@ volatile int32_t steps_k1;
 volatile int32_t steps_k2;
 int knee1_control = 0, knee2_control = 0;
 int target_steps_k1, target_steps_k2;
+float kneeAngle1, kneeAngle2;
 
 long loopCount = 0;
 long loopCountStart = millis();
@@ -249,36 +252,6 @@ tAS5047 encoder1 = { .selectPin = ENC_1_SELECT };
 tAS5047 encoder2 = { .selectPin = ENC_2_SELECT };
 
 // INITIALIZATION
-
-void setupEncoders() {
-  AS5047_SPI_Init();
-  AS5047_Init(encoder1);
-  AS5047_Init(encoder2);
-  syncEncoders(100);
-}
-
-void syncEncoders(int samples) {
-  // TODO: warn if spread is too high
-
-  long avgAngle1 = 0, avgAngle2 = 0;
-  for (int i = 0; i < samples; i++) {
-    AS5047_Read(encoder1, CMD_R_ANGLECOM);
-    avgAngle1 += encoder1.data.ANGLECOM.DAECANG;
-    AS5047_Read(encoder2, CMD_R_ANGLECOM);
-    avgAngle2 += encoder2.data.ANGLECOM.DAECANG;
-  }
-  avgAngle1 /= samples;
-  avgAngle2 /= samples;
-
-  // calibrate left knee
-  Serial.print("Position LEFT: "); Serial.println(avgAngle1);
-  steps_k1 = (avgAngle1 - ENC_1_ZERO) / 8192.0 * KNEE_HALF_TURN;
-
-  // calibrate right knee
-  Serial.print("Position RIGHT: "); Serial.println(avgAngle2);
-  steps_k2 = (avgAngle2 - ENC_2_ZERO) / 8192.0 * KNEE_HALF_TURN;
-}
-
 void setup()
 {
   // Enable servos (fan MOSFET on RAMPS)
@@ -336,7 +309,10 @@ void setup()
   myservo2.setMinimumPulse(SERVO2_MIN_PULSE);
   myservo2.setMaximumPulse(SERVO2_MAX_PULSE);
 
-  setupEncoders();
+  // setup encoders
+  AS5047_SPI_Init();
+  AS5047_Init(encoder1);
+  AS5047_Init(encoder2);
 
   // STEPPER MOTORS INITIALIZATION
   Serial.println("Steppers init");
@@ -419,6 +395,9 @@ void loop()
 {
   loopCount++;
   IBus.loop();
+
+  readEncoders();
+  syncKneeSteppers(20);  // max tolerated error
   
   if (OSCnewMessage)
   {
@@ -599,7 +578,7 @@ void loop()
     {
       digitalWrite(38, HIGH);  // Disable motors
       digitalWrite(A2, HIGH);
-      digitalWrite(LEFT_KNEE_EN, HIGH);   // this needs syncEncoders after restart
+      digitalWrite(LEFT_KNEE_EN, HIGH);
       digitalWrite(RIGHT_KNEE_EN, HIGH);
       setMotorSpeedM1(0);
       setMotorSpeedM2(0);
@@ -630,12 +609,7 @@ void loop()
       steering = -1 * ((remote_chan1 - 1500) / 1000.0) * max_steering;
       throttle = -1 * ((remote_chan2 - 1500) / 1000.0) * max_throttle;
 
-      bool enabled = IBus.readChannel(6) > 1999;
-      if (!bot_enabled && enabled) {
-        syncEncoders(100);
-      }
-      bot_enabled = enabled;
-
+      bot_enabled = IBus.readChannel(6) > 1999;
       switch_pro = IBus.readChannel(7) > 1999;
 
       kPInput = ((float) IBus.readChannel(4)-1000)/500.0;  // normalize between 0 and 2 (-100% / +100%)
@@ -739,4 +713,42 @@ void loop()
     }
 #endif
   }  // End of slow loop
+}
+
+void readEncoders() {
+  float alpha = 0.1;
+  AS5047_Read(encoder1, CMD_R_ANGLECOM);
+  float newAngle1 = (encoder1.data.ANGLECOM.DAECANG - ENC_1_ZERO) / ENCODER_FULL_TURN * 360;
+  kneeAngle1 = alpha * newAngle1 + (1-alpha) * kneeAngle1;
+
+  AS5047_Read(encoder2, CMD_R_ANGLECOM);
+  float newAngle2 = (encoder2.data.ANGLECOM.DAECANG - ENC_2_ZERO) / ENCODER_FULL_TURN * 360;
+  kneeAngle2 = alpha * newAngle2 + (1-alpha) * kneeAngle2;
+/*
+  Serial.print(kneeAngle1);
+  Serial.print("\t");
+  Serial.println(kneeAngle2);
+*/
+};
+
+void syncKneeSteppers(int tolerance) {
+  int expectedSteps1 = round(kneeAngle1 / 360 * KNEE_FULL_TURN);
+  int expectedSteps2 = round(kneeAngle2 / 360 * KNEE_FULL_TURN);
+
+  if (abs(steps_k1 - expectedSteps1) > tolerance) {
+    steps_k1 = expectedSteps1;
+//    steps_k1 -= 2 * (steps_k1 - expectedSteps1);
+//    setMotorSpeedK1(0);
+  }
+
+  if (abs(steps_k2 - expectedSteps2) > tolerance) {
+    steps_k2 = expectedSteps2;
+//    setMotorSpeedK2(0);
+  }
+
+  /*
+  Serial.print(steps_k1 - expectedSteps1);
+  Serial.print("\t");
+  Serial.println(steps_k2 - expectedSteps2);
+  */
 }
