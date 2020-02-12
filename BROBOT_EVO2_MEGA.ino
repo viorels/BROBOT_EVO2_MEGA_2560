@@ -40,8 +40,8 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 
 // ---------- CALIBRATION ----------
 
-#define ENC_1_ZERO 1200       // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
-#define ENC_2_ZERO 245        // leg is crouched, encoder goes up from here
+#define ENC_1_ZERO 2485       // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
+#define ENC_2_ZERO 1210        // leg is crouched, encoder goes up from here
 
 #define SERVO1_NEUTRAL 90 // Servo neutral position in degrees
 #define SERVO1_MIN_PULSE  500
@@ -183,6 +183,7 @@ float PID_errorOld2 = 0;
 float setPointOld = 0;
 float target_angle;
 bool bot_enabled = false;
+bool switch_pro = false;
 int16_t throttle;
 float steering;
 float max_throttle = MAX_THROTTLE;
@@ -458,7 +459,7 @@ void loop()
           steering = (-steering * steering + 0.5 * steering) * max_steering;
       }
 
-      if ((mode == 0) && (OSCtoggle[0]))
+      if ((mode == 0) && (switch_pro))
       {
         // Change to PRO mode
         max_throttle = MAX_THROTTLE_PRO;
@@ -466,7 +467,7 @@ void loop()
         max_target_angle = MAX_TARGET_ANGLE_PRO;
         mode = 1;
       }
-      if ((mode == 1) && (OSCtoggle[0] == 0))
+      if ((mode == 1) && (!switch_pro))
       {
         // Change to NORMAL mode
         max_throttle = MAX_THROTTLE;
@@ -634,6 +635,8 @@ void loop()
         syncEncoders(100);
       }
       bot_enabled = enabled;
+
+      switch_pro = IBus.readChannel(7) > 1999;
 
       kPInput = ((float) IBus.readChannel(4)-1000)/500.0;  // normalize between 0 and 2 (-100% / +100%)
       kDInput = ((float) IBus.readChannel(5)-1000)/500.0;
