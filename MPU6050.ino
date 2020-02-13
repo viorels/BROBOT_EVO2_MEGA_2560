@@ -493,42 +493,47 @@ float MPU6050_getAngle(float dt)
 }
 
 // Calibrate function. Take 100 readings (over 2 seconds) to calculate the gyro offset value. IMU should be steady in this process...
-void MPU6050_calibrate()
+void MPU6050_calibrate(long offset)
 {
   int i;
   long value = 0;
   float dev;
   int16_t values[100];
   bool gyro_cal_ok = false;
-  
-  delay(500);
-  while (!gyro_cal_ok){
-    Serial.println("Gyro calibration... DONT MOVE!");
-    // we take 100 measurements in 4 seconds
-    for (i = 0; i < 100; i++)
-    {
-      MPU6050_read_3axis();
-      values[i] = accel_t_gyro.value.x_gyro;
-      value += accel_t_gyro.value.x_gyro;
-      delay(25);
+
+  if (offset == 0) {
+    delay(500);
+    while (!gyro_cal_ok){
+      Serial.println("Gyro calibration... DONT MOVE!");
+      // we take 100 measurements in 4 seconds
+      for (i = 0; i < 100; i++)
+      {
+        MPU6050_read_3axis();
+        values[i] = accel_t_gyro.value.x_gyro;
+        value += accel_t_gyro.value.x_gyro;
+        delay(25);
+      }
+      // mean value
+      value = value / 100;
+      // calculate the standard deviation
+      dev = 0;
+      for (i = 0; i < 100; i++)
+        dev += (values[i] - value) * (values[i] - value);
+      dev = sqrt((1 / 100.0) * dev);
+      Serial.print("offset: ");
+      Serial.print(value);
+      Serial.print("  stddev: ");
+      Serial.println(dev);
+      if (dev < 50.0)
+        gyro_cal_ok = true;
+      else
+        Serial.println("Repeat, DONT MOVE!");
     }
-    // mean value
-    value = value / 100;
-    // calculate the standard deviation
-    dev = 0;
-    for (i = 0; i < 100; i++)
-      dev += (values[i] - value) * (values[i] - value);
-    dev = sqrt((1 / 100.0) * dev);
-    Serial.print("offset: ");
-    Serial.print(value);
-    Serial.print("  stddev: ");
-    Serial.println(dev);
-    if (dev < 50.0)
-      gyro_cal_ok = true;
-    else
-      Serial.println("Repeat, DONT MOVE!");
+    x_gyro_offset = value;
   }
-  x_gyro_offset = value;
+  else
+    x_gyro_offset = offset;
+
   // Take the first reading of angle from accels
   angle = atan2f((float)accel_t_gyro.value.y_accel, (float)accel_t_gyro.value.z_accel) * RAD2GRAD;
 }

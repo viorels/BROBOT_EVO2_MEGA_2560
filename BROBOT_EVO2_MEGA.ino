@@ -291,12 +291,10 @@ void setup()
 #endif
   Serial.println("JJROBOTS");
   delay(200);
-  Serial.println("Don't move for 10 sec...");
   MPU6050_setup();  // setup MPU6050 IMU
-  delay(500);
 
-  // Calibrate gyros
-  MPU6050_calibrate();
+  // Calibrate gyros, pass 0 to force calibration
+  MPU6050_calibrate(-295);
 
   // Init servos
   Serial.println("Servo init");
@@ -357,32 +355,12 @@ void setup()
   TIMSK3 |= (1 << OCIE1A); // Enable Timer3 interrupt
   TIMSK4 |= (1 << OCIE4A); // Enable Timer4 interrupt
   TIMSK5 |= (1 << OCIE5A); // Enable Timer5 interrupt
-  
-  // Little motor vibration and servo move to indicate that robot is ready
-  for (uint8_t k = 0; k < 2; k++)
-  {
-    setMotorSpeedM1(5);
-    setMotorSpeedM2(5);
-    myservo1.write(SERVO1_NEUTRAL + 5);
-    myservo2.write(SERVO2_NEUTRAL - 5);
-    SoftwareServo::refresh();
-    delay(200);
-    
-    setMotorSpeedM1(0);
-    setMotorSpeedM2(0);
-    myservo1.write(SERVO1_NEUTRAL);
-    myservo2.write(SERVO2_NEUTRAL);
-    SoftwareServo::refresh();
-    delay(200);
-  }
 
-
- #if TELEMETRY_BATTERY==1
+#if TELEMETRY_BATTERY==1
   BatteryValue = BROBOT_readBattery(true);
   Serial.print("BATT:");
   Serial.println(BatteryValue);
 #endif
-  Serial.println("BROBOT by JJROBOTS v2.82");
   Serial.println("Start...");
   timer_old = micros();
 
