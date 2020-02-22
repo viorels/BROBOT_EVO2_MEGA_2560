@@ -74,8 +74,8 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 #define KNEE_FULL_TURN 14400  // 200 * 8 * 9 (steps/360 * micro * belt)
 #define KNEE_HALF_TURN 7200
 
-#define ENC_1_SELECT 17 // pin 17 is used for selecting the seconds encoder
-#define ENC_2_SELECT 16
+#define ENC_1_SELECT 25  // was 16/17, but that is also TX2/RX2
+#define ENC_2_SELECT 23
 #define ENCODER_FULL_TURN pow(2, 14)
 
 // Default control terms for EVO 2
@@ -261,17 +261,16 @@ void setup()
   // STEPPER PINS ON JJROBOTS BROBOT BRAIN BOARD
   pinMode(38, OUTPUT); // ENABLE MOTOR1
   pinMode(A2, OUTPUT); // ENABLE MOTOR2
-  pinMode(24, OUTPUT); // ENABLE KNEE1
-  pinMode(30, OUTPUT); // ENABLE KNEE2
+  pinMode(LEFT_KNEE_EN, OUTPUT);
+  pinMode(RIGHT_KNEE_EN, OUTPUT);
 
   pinMode(A0, OUTPUT); // --- STEP MOTOR 1
   pinMode(A1, OUTPUT); // --- DIR MOTOR 1
   pinMode(A6, OUTPUT); // --- STEP MOTOR 2 
   pinMode(A7, OUTPUT); // --- DIR MOTOR 2
-  pinMode(12, OUTPUT); // STEP MOTOR 2 PORTD,6
-  pinMode(5, OUTPUT); // DIR MOTOR 2  PORTC,6
-  pinMode(LEFT_KNEE_EN, OUTPUT);
-  pinMode(RIGHT_KNEE_EN, OUTPUT);
+
+  pinMode(12, OUTPUT); // STEP MOTOR 2 PORTD,6  // WHAT IS THIS FOR?!!
+  pinMode(5, OUTPUT); // DIR MOTOR 2  PORTC,6   // WHAT IS THIS FOR?!!
 
   // Disable motors
   digitalWrite(38, HIGH);
@@ -632,7 +631,7 @@ void loop()
   {
     loop_counter = 0;
 
-#if DEBUG>0
+#if DEBUG==7
     // How fast is the main loop?
     Serial.print(loopCount * 1000 / (millis() - loopCountStart));
     Serial.println(" Hz");
