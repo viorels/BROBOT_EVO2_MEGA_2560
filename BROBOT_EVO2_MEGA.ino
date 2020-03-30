@@ -37,7 +37,6 @@
 SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 #include "AS5047.h"
 #include "FlySkyIBus.h"
-#include <Telemetry.h>
 
 // ---------- CALIBRATION ----------
 
@@ -370,10 +369,6 @@ void setup()
   timer_old = micros();
 
   IBus.begin(Serial1);
-
-  Telemetry.attach_f32_to("alpha", &angle_alpha);
-  Telemetry.attach_f32_to("ao", &angle_offset);
-  Telemetry.attach_f32_to("so", &servos_offset);
 }
 
 
@@ -382,11 +377,6 @@ void loop()
 {
   loopCount++;
   IBus.loop();
-
-  Telemetry.update();
-  Telemetry.pub_f32("alpha", angle_alpha);
-  Telemetry.pub_f32("ao", angle_offset);
-  Telemetry.pub_f32("so", servos_offset);
 
   readEncoders();
   syncKneeSteppers(20);  // max tolerated error
@@ -485,8 +475,6 @@ void loop()
     Serial.print(" ");
     Serial.println(angle_adjusted_filtered);
 #endif
-    Telemetry.pub_f32("aa", angle_adjusted);
-    Telemetry.pub_f32("aaf", angle_adjusted_filtered);
     //Serial.print("\t");
 
     // We calculate the estimated robot speed:
@@ -610,7 +598,6 @@ void loop()
       int microsOffset = remote_chan3 - 1000;  // DS3225 Pulse width range: 500~2500 μsec
       float balanceOffset = (remote_chan4 - 1500) / 500.0 * 0.1;
       float height = microsOffset / 1000.0f;  // should be 1 - ...
-      Telemetry.pub_f32("h", height);
 
       target_steps_k1 = constrain((height + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
       target_steps_k2 = constrain((height - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
