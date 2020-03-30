@@ -47,7 +47,7 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 #define SERVO1_MIN_PULSE  500
 #define SERVO1_MAX_PULSE  2500
 #define SERVO2_NEUTRAL 90
-#define SERVO2_OFFSET 3
+#define SERVO2_OFFSET 2
 #define SERVO2_MIN_PULSE  500
 #define SERVO2_MAX_PULSE  2500
 
@@ -163,6 +163,7 @@ float dt;
 float angle_adjusted;
 float angle_adjusted_Old;
 float angle_adjusted_filtered = 0.0;
+float angle_alpha = 0.05;
 
 // Default control values from constant definitions
 float Kp = KP;
@@ -193,6 +194,7 @@ float max_steering = MAX_STEERING;
 float max_target_angle = MAX_TARGET_ANGLE;
 float control_output;
 float angle_offset = ANGLE_OFFSET;
+float servos_offset = 0;
 
 boolean positionControlMode = false;
 uint8_t mode;  // mode = 0 Normal mode, mode = 1 Pro mode (More agressive)
@@ -222,6 +224,7 @@ volatile int32_t steps_k2;
 int knee1_control = 0, knee2_control = 0;
 int target_steps_k1, target_steps_k2;
 float kneeAngle1, kneeAngle2;
+float dampen_k1 = 0, dampen_k2 = 0;
 
 long loopCount = 0;
 long loopCountStart = millis();
@@ -257,6 +260,8 @@ void setup()
   // Enable servos (fan MOSFET on RAMPS)
   pinMode(9, OUTPUT);
   digitalWrite(9, HIGH);
+
+//  pinMode(0, INPUT_PULLUP);   // RX pullup, required for BT HC-05 connection
   
   // STEPPER PINS ON JJROBOTS BROBOT BRAIN BOARD
   pinMode(38, OUTPUT); // ENABLE MOTOR1
@@ -459,18 +464,16 @@ void loop()
     float MPU_sensor_angle = MPU6050_getAngle(dt);
     angle_adjusted = MPU_sensor_angle + angle_offset;
     if ((MPU_sensor_angle>-15)&&(MPU_sensor_angle<15))
-      angle_adjusted_filtered = angle_adjusted_filtered*0.99 + MPU_sensor_angle*0.01;
+      angle_adjusted_filtered = angle_adjusted_filtered*(1-angle_alpha) + MPU_sensor_angle*angle_alpha;
       
 #if DEBUG==1
-/*
     Serial.print(dt);
     Serial.print(" ");
     Serial.print(angle_offset);
     Serial.print(" ");
     Serial.print(angle_adjusted);
-    Serial.print(",");
+    Serial.print(" ");
     Serial.println(angle_adjusted_filtered);
-*/
 #endif
     //Serial.print("\t");
 
@@ -599,8 +602,8 @@ void loop()
       target_steps_k1 = constrain((height + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
       target_steps_k2 = constrain((height - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
 
-      myservo1.write(constrain(SERVO1_NEUTRAL + 90 - (abs(steps_k1) * 90 / (float)KNEE_HALF_TURN), 70, 180));
-      myservo2.write(constrain(SERVO2_NEUTRAL + SERVO2_OFFSET - 90 + (abs(steps_k2) * 90 / (float)KNEE_HALF_TURN), 0, 110));
+      myservo1.write(constrain(SERVO1_NEUTRAL + servos_offset + 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN), 70, 180));
+      myservo2.write(constrain(SERVO2_NEUTRAL - servos_offset + SERVO2_OFFSET - 90 * (1-abs(steps_k2)/(float)KNEE_HALF_TURN), 0, 110));
 //      myservo1.writeMicroseconds(constrain(SERVO1_NEUTRAL + 1000 - (abs(steps_k1) / 1.8), 1300, 2500));
 //      myservo2.writeMicroseconds(constrain(SERVO2_NEUTRAL - 1000 + steps_k2 / 1.8, 500, 1700));
       if (bot_enabled) {
@@ -708,14 +711,34 @@ void readEncoders() {
 */
 };
 
+float avgDiff1 = 1;
+
 void syncKneeSteppers(int tolerance) {
   int expectedSteps1 = round(kneeAngle1 / 360 * KNEE_FULL_TURN);
   int expectedSteps2 = round(kneeAngle2 / 360 * KNEE_FULL_TURN);
 
+  int diff1 = steps_k1 - expectedSteps1;
+  float alpha = 0.01;
+  avgDiff1 = alpha * diff1 + (1-alpha) * avgDiff1;
+/*
+  Serial.print(diff1);
+  Serial.print("\t");
+  Serial.print(avgDiff1);
+  Serial.print("\t");
+//  Serial.print(steps_k2 - expectedSteps2);
+//  Serial.print("\t");
+*/
+  tolerance = 100; // OVERRIDE TOLERANCE
+
   if (abs(steps_k1 - expectedSteps1) > tolerance) {
+//    Serial.print(steps_k1 - expectedSteps1);
     steps_k1 = expectedSteps1;
 //    steps_k1 -= 2 * (steps_k1 - expectedSteps1);
 //    setMotorSpeedK1(0);
+  }
+  else {
+//    dampen_k1 = constrain(0.01 * -(diff1 - avgDiff1), -0.01, + 0.01);
+//    Serial.print(dampen_k1);
   }
 
   if (abs(steps_k2 - expectedSteps2) > tolerance) {
@@ -723,9 +746,5 @@ void syncKneeSteppers(int tolerance) {
 //    setMotorSpeedK2(0);
   }
 
-  /*
-  Serial.print(steps_k1 - expectedSteps1);
-  Serial.print("\t");
-  Serial.println(steps_k2 - expectedSteps2);
-  */
+//  Serial.println();
 }
