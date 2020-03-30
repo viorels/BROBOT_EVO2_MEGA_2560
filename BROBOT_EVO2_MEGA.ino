@@ -137,7 +137,7 @@ float Kit_old;
 #define MICROSTEPPING 16   // 8 or 16 for 1/8 or 1/16 driver microstepping (default:16)
 #define KNEE_MICROSTEPPING 8
 
-#define DEBUG 0   // 0 = No debug info (default) DEBUG 1 for console output
+#define DEBUG 1   // 0 = No debug info (default) DEBUG 1 for console output
 
 // AUX definitions
 #define CLR(x,y) (x&=(~(1<<y)))
@@ -452,9 +452,9 @@ void loop()
 //      readControlParameters();
     }
 #if DEBUG==1
-    Serial.print(throttle);
-    Serial.print(" ");
-    Serial.println(steering);
+//    Serial.print(throttle);
+//    Serial.print(" ");
+//    Serial.println(steering);
 #endif
   } // End new OSC message
 
