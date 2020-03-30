@@ -37,6 +37,7 @@
 SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 #include "AS5047.h"
 #include "FlySkyIBus.h"
+#include <Telemetry.h>
 
 // ---------- CALIBRATION ----------
 
@@ -128,6 +129,7 @@ float Kit_old;
 #define ANGLE_OFFSET 0.0  // Offset angle for balance (to compensate robot own weight distribution)
 
 // Telemetry
+#define TELEMETRY_DEBUG 0
 #define TELEMETRY_BATTERY 0
 
 #define ZERO_SPEED 65535
@@ -369,6 +371,12 @@ void setup()
   timer_old = micros();
 
   IBus.begin(Serial1);
+
+#if TELEMETRY_DEBUG==1
+  Telemetry.attach_f32_to("alpha", &angle_alpha);
+  Telemetry.attach_f32_to("ao", &angle_offset);
+  Telemetry.attach_f32_to("so", &servos_offset);
+#endif
 }
 
 
@@ -377,6 +385,13 @@ void loop()
 {
   loopCount++;
   IBus.loop();
+
+#if TELEMETRY_DEBUG==1
+  Telemetry.update();
+  Telemetry.pub_f32("alpha", angle_alpha);
+  Telemetry.pub_f32("ao", angle_offset);
+  Telemetry.pub_f32("so", servos_offset);
+#endif
 
   readEncoders();
   syncKneeSteppers(20);  // max tolerated error
@@ -475,7 +490,11 @@ void loop()
     Serial.print(" ");
     Serial.println(angle_adjusted_filtered);
 #endif
-    //Serial.print("\t");
+
+#if TELEMETRY_DEBUG==1
+    Telemetry.pub_f32("aa", angle_adjusted);
+    Telemetry.pub_f32("aaf", angle_adjusted_filtered);
+#endif
 
     // We calculate the estimated robot speed:
     // Estimated_Speed = angular_velocity_of_stepper_motors(combined) - angular_velocity_of_robot(angle measured by IMU)
@@ -599,6 +618,10 @@ void loop()
       float balanceOffset = (remote_chan4 - 1500) / 500.0 * 0.1;
       float height = microsOffset / 1000.0f;  // should be 1 - ...
 
+#if TELEMETRY_DEBUG==1
+      Telemetry.pub_f32("h", height);
+#endif
+
       target_steps_k1 = constrain((height + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
       target_steps_k2 = constrain((height - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
 
@@ -639,19 +662,6 @@ void loop()
     Serial.print(loopCount * 1000 / (millis() - loopCountStart));
     Serial.println(" Hz");
     loopCount = 0; loopCountStart = millis();
-#endif
-
-    // Telemetry here?
-#if TELEMETRY_ANGLE==1
-    char auxS[25];
-    int ang_out = constrain(int(angle_adjusted * 10), -900, 900);
-    sprintf(auxS, "$tA,%+04d", ang_out);
-    Serial1.println(auxS);
-#endif
-#if TELEMETRY_DEBUG==1
-    char auxS[50];
-    sprintf(auxS, "$tD,%d,%d,%ld", int(angle_adjusted * 10), int(estimated_speed_filtered), steps1);
-    Serial1.println(auxS);
 #endif
 
   } // End of medium loop
