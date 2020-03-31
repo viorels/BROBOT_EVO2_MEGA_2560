@@ -41,7 +41,7 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 
 // ---------- CALIBRATION ----------
 
-#define ENC_1_ZERO 2485       // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
+#define ENC_1_ZERO 2200        // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
 #define ENC_2_ZERO 1210        // leg is crouched, encoder goes up from here
 
 #define SERVO1_NEUTRAL 90 // Servo neutral position in degrees
@@ -128,6 +128,8 @@ float Kit_old;
 
 #define ANGLE_OFFSET 0.0  // Offset angle for balance (to compensate robot own weight distribution)
 
+#define DEBUG 0   // 0 = No debug info (default) DEBUG 1 for console output
+
 // Telemetry
 #define TELEMETRY_DEBUG 0
 #define TELEMETRY_BATTERY 0
@@ -137,8 +139,6 @@ float Kit_old;
 
 #define MICROSTEPPING 16   // 8 or 16 for 1/8 or 1/16 driver microstepping (default:16)
 #define KNEE_MICROSTEPPING 8
-
-#define DEBUG 1   // 0 = No debug info (default) DEBUG 1 for console output
 
 // AUX definitions
 #define CLR(x,y) (x&=(~(1<<y)))
@@ -195,8 +195,9 @@ float max_throttle = MAX_THROTTLE;
 float max_steering = MAX_STEERING;
 float max_target_angle = MAX_TARGET_ANGLE;
 float control_output;
+float vertical_offset = 0;
 float angle_offset = ANGLE_OFFSET;
-float servos_offset = 4;
+float servos_offset = 0;
 
 boolean positionControlMode = false;
 uint8_t mode;  // mode = 0 Normal mode, mode = 1 Pro mode (More agressive)
@@ -477,7 +478,7 @@ void loop()
     angle_adjusted_Old = angle_adjusted;
     // Get new orientation angle from IMU (MPU6050)
     float MPU_sensor_angle = MPU6050_getAngle(dt);
-    angle_adjusted = MPU_sensor_angle + angle_offset;
+    angle_adjusted = MPU_sensor_angle + vertical_offset + angle_offset;
     if ((MPU_sensor_angle>-15)&&(MPU_sensor_angle<15))
       angle_adjusted_filtered = angle_adjusted_filtered*(1-angle_alpha) + MPU_sensor_angle*angle_alpha;
       
@@ -616,21 +617,23 @@ void loop()
 
       int microsOffset = remote_chan3 - 1000;  // DS3225 Pulse width range: 500~2500 μsec
       float balanceOffset = (remote_chan4 - 1500) / 500.0 * 0.1;
-      float height = microsOffset / 1000.0f;  // should be 1 - ...
+      float height = microsOffset / 1000.0f;
+
+      float knee_pos = 2 * asin(height) / PI;   // knee angle in range 0.0 - 1.0
+      servos_offset = map(knee_pos * 100, 0, 100, 10, -10);
+      angle_offset = pow(1 - knee_pos, 2) * 30;
 
 #if TELEMETRY_DEBUG==1
-      Telemetry.pub_f32("h", height);
+      Telemetry.pub_f32("p", knee_pos);
 #endif
 
-      target_steps_k1 = constrain((height + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
-      target_steps_k2 = constrain((height - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
+      target_steps_k1 = constrain((knee_pos + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
+      target_steps_k2 = constrain((knee_pos - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
 
-      angle_offset = 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN);
+      vertical_offset = 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN);
 
       myservo1.write(constrain(SERVO1_NEUTRAL + servos_offset + 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN), 70, 180));
       myservo2.write(constrain(SERVO2_NEUTRAL - servos_offset + SERVO2_OFFSET - 90 * (1-abs(steps_k2)/(float)KNEE_HALF_TURN), 0, 110));
-//      myservo1.writeMicroseconds(constrain(SERVO1_NEUTRAL + 1000 - (abs(steps_k1) / 1.8), 1300, 2500));
-//      myservo2.writeMicroseconds(constrain(SERVO2_NEUTRAL - 1000 + steps_k2 / 1.8, 500, 1700));
       if (bot_enabled) {
         SoftwareServo::refresh();
       }
