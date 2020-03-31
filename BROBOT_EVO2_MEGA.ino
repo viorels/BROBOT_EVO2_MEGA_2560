@@ -196,7 +196,7 @@ float max_steering = MAX_STEERING;
 float max_target_angle = MAX_TARGET_ANGLE;
 float control_output;
 float angle_offset = ANGLE_OFFSET;
-float servos_offset = 0;
+float servos_offset = 4;
 
 boolean positionControlMode = false;
 uint8_t mode;  // mode = 0 Normal mode, mode = 1 Pro mode (More agressive)
@@ -624,6 +624,8 @@ void loop()
 
       target_steps_k1 = constrain((height + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
       target_steps_k2 = constrain((height - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
+
+      angle_offset = 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN);
 
       myservo1.write(constrain(SERVO1_NEUTRAL + servos_offset + 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN), 70, 180));
       myservo2.write(constrain(SERVO2_NEUTRAL - servos_offset + SERVO2_OFFSET - 90 * (1-abs(steps_k2)/(float)KNEE_HALF_TURN), 0, 110));
