@@ -41,7 +41,7 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 
 // ---------- CALIBRATION ----------
 
-#define ENC_1_ZERO 2485       // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
+#define ENC_1_ZERO 2200        // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
 #define ENC_2_ZERO 1210        // leg is crouched, encoder goes up from here
 
 #define SERVO1_NEUTRAL 90 // Servo neutral position in degrees
@@ -128,7 +128,10 @@ float Kit_old;
 
 #define ANGLE_OFFSET 0.0  // Offset angle for balance (to compensate robot own weight distribution)
 
+#define DEBUG 0   // 0 = No debug info (default) DEBUG 1 for console output
+
 // Telemetry
+#define TELEMETRY_DEBUG 0
 #define TELEMETRY_BATTERY 0
 
 #define ZERO_SPEED 65535
@@ -136,8 +139,6 @@ float Kit_old;
 
 #define MICROSTEPPING 16   // 8 or 16 for 1/8 or 1/16 driver microstepping (default:16)
 #define KNEE_MICROSTEPPING 8
-
-#define DEBUG 0   // 0 = No debug info (default) DEBUG 1 for console output
 
 // AUX definitions
 #define CLR(x,y) (x&=(~(1<<y)))
@@ -194,6 +195,7 @@ float max_throttle = MAX_THROTTLE;
 float max_steering = MAX_STEERING;
 float max_target_angle = MAX_TARGET_ANGLE;
 float control_output;
+float vertical_offset = 0;
 float angle_offset = ANGLE_OFFSET;
 float servos_offset = 0;
 
@@ -371,9 +373,11 @@ void setup()
 
   IBus.begin(Serial1);
 
+#if TELEMETRY_DEBUG==1
   Telemetry.attach_f32_to("alpha", &angle_alpha);
   Telemetry.attach_f32_to("ao", &angle_offset);
   Telemetry.attach_f32_to("so", &servos_offset);
+#endif
 }
 
 
@@ -383,10 +387,12 @@ void loop()
   loopCount++;
   IBus.loop();
 
+#if TELEMETRY_DEBUG==1
   Telemetry.update();
   Telemetry.pub_f32("alpha", angle_alpha);
   Telemetry.pub_f32("ao", angle_offset);
   Telemetry.pub_f32("so", servos_offset);
+#endif
 
   readEncoders();
   syncKneeSteppers(20);  // max tolerated error
@@ -452,9 +458,9 @@ void loop()
 //      readControlParameters();
     }
 #if DEBUG==1
-    Serial.print(throttle);
-    Serial.print(" ");
-    Serial.println(steering);
+//    Serial.print(throttle);
+//    Serial.print(" ");
+//    Serial.println(steering);
 #endif
   } // End new OSC message
 
@@ -472,7 +478,7 @@ void loop()
     angle_adjusted_Old = angle_adjusted;
     // Get new orientation angle from IMU (MPU6050)
     float MPU_sensor_angle = MPU6050_getAngle(dt);
-    angle_adjusted = MPU_sensor_angle + angle_offset;
+    angle_adjusted = MPU_sensor_angle + vertical_offset + angle_offset;
     if ((MPU_sensor_angle>-15)&&(MPU_sensor_angle<15))
       angle_adjusted_filtered = angle_adjusted_filtered*(1-angle_alpha) + MPU_sensor_angle*angle_alpha;
       
@@ -485,9 +491,11 @@ void loop()
     Serial.print(" ");
     Serial.println(angle_adjusted_filtered);
 #endif
+
+#if TELEMETRY_DEBUG==1
     Telemetry.pub_f32("aa", angle_adjusted);
     Telemetry.pub_f32("aaf", angle_adjusted_filtered);
-    //Serial.print("\t");
+#endif
 
     // We calculate the estimated robot speed:
     // Estimated_Speed = angular_velocity_of_stepper_motors(combined) - angular_velocity_of_robot(angle measured by IMU)
@@ -609,16 +617,23 @@ void loop()
 
       int microsOffset = remote_chan3 - 1000;  // DS3225 Pulse width range: 500~2500 μsec
       float balanceOffset = (remote_chan4 - 1500) / 500.0 * 0.1;
-      float height = microsOffset / 1000.0f;  // should be 1 - ...
-      Telemetry.pub_f32("h", height);
+      float height = microsOffset / 1000.0f;
 
-      target_steps_k1 = constrain((height + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
-      target_steps_k2 = constrain((height - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
+      float knee_pos = 2 * asin(height) / PI;   // knee angle in range 0.0 - 1.0
+      servos_offset = map(knee_pos * 100, 0, 100, 10, -10);
+      angle_offset = pow(1 - knee_pos, 2) * 30;
+
+#if TELEMETRY_DEBUG==1
+      Telemetry.pub_f32("p", knee_pos);
+#endif
+
+      target_steps_k1 = constrain((knee_pos + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
+      target_steps_k2 = constrain((knee_pos - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
+
+      vertical_offset = 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN);
 
       myservo1.write(constrain(SERVO1_NEUTRAL + servos_offset + 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN), 70, 180));
       myservo2.write(constrain(SERVO2_NEUTRAL - servos_offset + SERVO2_OFFSET - 90 * (1-abs(steps_k2)/(float)KNEE_HALF_TURN), 0, 110));
-//      myservo1.writeMicroseconds(constrain(SERVO1_NEUTRAL + 1000 - (abs(steps_k1) / 1.8), 1300, 2500));
-//      myservo2.writeMicroseconds(constrain(SERVO2_NEUTRAL - 1000 + steps_k2 / 1.8, 500, 1700));
       if (bot_enabled) {
         SoftwareServo::refresh();
       }
@@ -652,19 +667,6 @@ void loop()
     Serial.print(loopCount * 1000 / (millis() - loopCountStart));
     Serial.println(" Hz");
     loopCount = 0; loopCountStart = millis();
-#endif
-
-    // Telemetry here?
-#if TELEMETRY_ANGLE==1
-    char auxS[25];
-    int ang_out = constrain(int(angle_adjusted * 10), -900, 900);
-    sprintf(auxS, "$tA,%+04d", ang_out);
-    Serial1.println(auxS);
-#endif
-#if TELEMETRY_DEBUG==1
-    char auxS[50];
-    sprintf(auxS, "$tD,%d,%d,%ld", int(angle_adjusted * 10), int(estimated_speed_filtered), steps1);
-    Serial1.println(auxS);
 #endif
 
   } // End of medium loop
