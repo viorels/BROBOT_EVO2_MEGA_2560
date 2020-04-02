@@ -380,8 +380,47 @@ void loop()
   readEncoders();
   syncKneeSteppers(20);  // max tolerated error
   
-//  if (OSCnewMessage) ...
+  if (IBus.isActive()) {
+    float alpha = 0.2;
+    remote_chan1 = IBus.readChannel(0) * alpha + remote_chan1 * (1-alpha);
+    remote_chan2 = IBus.readChannel(1) * alpha + remote_chan2 * (1-alpha);
+    remote_chan3 = IBus.readChannel(2) * alpha + remote_chan3 * (1-alpha);
+    remote_chan4 = IBus.readChannel(3) * alpha + remote_chan4 * (1-alpha);
 
+    // TODO: this should ber reversed
+    steering = -1 * ((remote_chan1 - 1500) / 1000.0) * max_steering;
+    throttle = -1 * ((remote_chan2 - 1500) / 1000.0) * max_throttle;
+
+    bot_enabled = IBus.readChannel(6) > 1999;
+    switch_pro = IBus.readChannel(7) > 1999;
+
+    kPInput = ((float) IBus.readChannel(4)-1000)/500.0;  // normalize between 0 and 2 (-100% / +100%)
+    kDInput = ((float) IBus.readChannel(5)-1000)/500.0;
+
+    int microsOffset = remote_chan3 - 1000;  // DS3225 Pulse width range: 500~2500 μsec
+    float balanceOffset = (remote_chan4 - 1500) / 500.0 * 0.1;
+    float height = microsOffset / 1000.0f;
+
+    float knee_pos = 2 * asin(height) / PI;   // knee angle in range 0.0 - 1.0
+    servos_offset = map(knee_pos * 100, 0, 100, 10, -10);
+    angle_offset = pow(1 - knee_pos, 2) * 30;
+
+#if TELEMETRY_DEBUG==1
+//      Telemetry.pub_f32("p", knee_pos);
+#endif
+
+    target_steps_k1 = constrain((knee_pos + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
+    target_steps_k2 = constrain((knee_pos - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
+
+    vertical_offset = 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN);
+
+    myservo1.write(constrain(SERVO1_NEUTRAL + servos_offset + 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN), 70, 180));
+    myservo2.write(constrain(SERVO2_NEUTRAL - servos_offset + SERVO2_OFFSET - 90 * (1-abs(steps_k2)/(float)KNEE_HALF_TURN), 0, 110));
+    if (bot_enabled) {
+      SoftwareServo::refresh();
+    }
+  }
+    
 //        throttle = (OSCfader[0] - 0.5) * max_throttle;
 //        // We add some exponential on steering to smooth the center band
 //        steering = OSCfader[1] - 0.5;
@@ -525,47 +564,6 @@ void loop()
       steps2 = 0;
       throttle = 0;
       steering = 0;
-    }
-
-    if (IBus.isActive()) {
-      float alpha = 0.2;
-      remote_chan1 = IBus.readChannel(0) * alpha + remote_chan1 * (1-alpha);
-      remote_chan2 = IBus.readChannel(1) * alpha + remote_chan2 * (1-alpha);
-      remote_chan3 = IBus.readChannel(2) * alpha + remote_chan3 * (1-alpha);
-      remote_chan4 = IBus.readChannel(3) * alpha + remote_chan4 * (1-alpha);
-
-      // TODO: this should ber reversed
-      steering = -1 * ((remote_chan1 - 1500) / 1000.0) * max_steering;
-      throttle = -1 * ((remote_chan2 - 1500) / 1000.0) * max_throttle;
-
-      bot_enabled = IBus.readChannel(6) > 1999;
-      switch_pro = IBus.readChannel(7) > 1999;
-
-      kPInput = ((float) IBus.readChannel(4)-1000)/500.0;  // normalize between 0 and 2 (-100% / +100%)
-      kDInput = ((float) IBus.readChannel(5)-1000)/500.0;
-
-      int microsOffset = remote_chan3 - 1000;  // DS3225 Pulse width range: 500~2500 μsec
-      float balanceOffset = (remote_chan4 - 1500) / 500.0 * 0.1;
-      float height = microsOffset / 1000.0f;
-
-      float knee_pos = 2 * asin(height) / PI;   // knee angle in range 0.0 - 1.0
-      servos_offset = map(knee_pos * 100, 0, 100, 10, -10);
-      angle_offset = pow(1 - knee_pos, 2) * 30;
-
-#if TELEMETRY_DEBUG==1
-//      Telemetry.pub_f32("p", knee_pos);
-#endif
-
-      target_steps_k1 = constrain((knee_pos + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
-      target_steps_k2 = constrain((knee_pos - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
-
-      vertical_offset = 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN);
-
-      myservo1.write(constrain(SERVO1_NEUTRAL + servos_offset + 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN), 70, 180));
-      myservo2.write(constrain(SERVO2_NEUTRAL - servos_offset + SERVO2_OFFSET - 90 * (1-abs(steps_k2)/(float)KNEE_HALF_TURN), 0, 110));
-      if (bot_enabled) {
-        SoftwareServo::refresh();
-      }
     }
 
     // Normal condition?
