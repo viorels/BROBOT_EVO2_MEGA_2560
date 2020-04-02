@@ -743,7 +743,7 @@ void syncKneeSteppers(int tolerance) {
 //  Serial.print(steps_k2 - expectedSteps2);
 //  Serial.print("\t");
 */
-  tolerance = 100; // OVERRIDE TOLERANCE
+//  tolerance = 100; // OVERRIDE TOLERANCE
 
   if (abs(steps_k1 - expectedSteps1) > tolerance) {
 //    Serial.print(steps_k1 - expectedSteps1);
