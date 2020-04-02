@@ -131,7 +131,7 @@ float Kit_old;
 #define DEBUG 0   // 0 = No debug info (default) DEBUG 1 for console output
 
 // Telemetry
-#define TELEMETRY_DEBUG 0
+#define TELEMETRY_DEBUG 1
 #define TELEMETRY_BATTERY 0
 
 #define ZERO_SPEED 65535
@@ -376,7 +376,7 @@ void setup()
 #if TELEMETRY_DEBUG==1
   Telemetry.attach_f32_to("alpha", &angle_alpha);
   Telemetry.attach_f32_to("ao", &angle_offset);
-  Telemetry.attach_f32_to("so", &servos_offset);
+//  Telemetry.attach_f32_to("so", &servos_offset);
 #endif
 }
 
@@ -391,7 +391,7 @@ void loop()
   Telemetry.update();
   Telemetry.pub_f32("alpha", angle_alpha);
   Telemetry.pub_f32("ao", angle_offset);
-  Telemetry.pub_f32("so", servos_offset);
+//  Telemetry.pub_f32("so", servos_offset);
 #endif
 
   readEncoders();
@@ -493,8 +493,8 @@ void loop()
 #endif
 
 #if TELEMETRY_DEBUG==1
-    Telemetry.pub_f32("aa", angle_adjusted);
-    Telemetry.pub_f32("aaf", angle_adjusted_filtered);
+//    Telemetry.pub_f32("aa", angle_adjusted);
+//    Telemetry.pub_f32("aaf", angle_adjusted_filtered);
 #endif
 
     // We calculate the estimated robot speed:
@@ -624,7 +624,7 @@ void loop()
       angle_offset = pow(1 - knee_pos, 2) * 30;
 
 #if TELEMETRY_DEBUG==1
-      Telemetry.pub_f32("p", knee_pos);
+//      Telemetry.pub_f32("p", knee_pos);
 #endif
 
       target_steps_k1 = constrain((knee_pos + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
