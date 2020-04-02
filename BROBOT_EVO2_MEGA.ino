@@ -179,7 +179,6 @@ float Ki_thr_user = KI_THROTTLE;
 float Kp_position = KP_POSITION;
 float Kd_position = KD_POSITION;
 bool newControlParameters = false;
-bool modifing_control_parameters = false;
 int16_t position_error_sum_M1;
 int16_t position_error_sum_M2;
 float PID_errorSum;
@@ -199,7 +198,6 @@ float vertical_offset = 0;
 float angle_offset = ANGLE_OFFSET;
 float servos_offset = 0;
 
-boolean positionControlMode = false;
 uint8_t mode;  // mode = 0 Normal mode, mode = 1 Pro mode (More agressive)
 
 int16_t motor1;
@@ -238,21 +236,6 @@ int remote_chan2 = 1500;  // forward/back
 int remote_chan3 = 1000;  // up/down
 int remote_chan4 = 1500;  // balance?
 float kPInput = 1, kDInput = 1;
-
-// OSC output variables
-uint8_t OSCpage;
-uint8_t OSCnewMessage;
-float OSCfader[4];
-float OSCxy1_x;
-float OSCxy1_y;
-float OSCxy2_x;
-float OSCxy2_y;
-uint8_t OSCpush[4];
-uint8_t OSCtoggle[4];
-uint8_t OSCmove_mode;
-int16_t OSCmove_speed;
-int16_t OSCmove_steps1;
-int16_t OSCmove_steps2;
 
 tAS5047 encoder1 = { .selectPin = ENC_1_SELECT };
 tAS5047 encoder2 = { .selectPin = ENC_2_SELECT };
@@ -397,72 +380,33 @@ void loop()
   readEncoders();
   syncKneeSteppers(20);  // max tolerated error
   
-  if (OSCnewMessage)
-  {
-    OSCnewMessage = 0;
-    if (OSCpage == 1)   // Get commands from user (PAGE1 are user commands: throttle, steering...)
-    {
-      if (modifing_control_parameters)  // We came from the settings screen
-      {
-        OSCfader[0] = 0.5; // default neutral values
-        OSCfader[1] = 0.5;
-        OSCtoggle[0] = 0;  // Normal mode
-        mode = 0;
-        modifing_control_parameters = false;
-      }
+//  if (OSCnewMessage) ...
 
-      if (OSCmove_mode)
-      {
-        //Serial.print("M ");
-        //Serial.print(OSCmove_speed);
-        //Serial.print(" ");
-        //Serial.print(OSCmove_steps1);
-        //Serial.print(",");
-        //Serial.println(OSCmove_steps2);
-        positionControlMode = true;
-        OSCmove_mode = false;
-        target_steps1 = steps1 + OSCmove_steps1;
-        target_steps2 = steps2 + OSCmove_steps2;
-      }
-      else
-      {
-        positionControlMode = false;
-        throttle = (OSCfader[0] - 0.5) * max_throttle;
-        // We add some exponential on steering to smooth the center band
-        steering = OSCfader[1] - 0.5;
-        if (steering > 0)
-          steering = (steering * steering + 0.5 * steering) * max_steering;
-        else
-          steering = (-steering * steering + 0.5 * steering) * max_steering;
-      }
+//        throttle = (OSCfader[0] - 0.5) * max_throttle;
+//        // We add some exponential on steering to smooth the center band
+//        steering = OSCfader[1] - 0.5;
+//        if (steering > 0)
+//          steering = (steering * steering + 0.5 * steering) * max_steering;
+//        else
+//          steering = (-steering * steering + 0.5 * steering) * max_steering;
 
-      if ((mode == 0) && (switch_pro))
-      {
-        // Change to PRO mode
-        max_throttle = MAX_THROTTLE_PRO;
-        max_steering = MAX_STEERING_PRO;
-        max_target_angle = MAX_TARGET_ANGLE_PRO;
-        mode = 1;
-      }
-      if ((mode == 1) && (!switch_pro))
-      {
-        // Change to NORMAL mode
-        max_throttle = MAX_THROTTLE;
-        max_steering = MAX_STEERING;
-        max_target_angle = MAX_TARGET_ANGLE;
-        mode = 0;
-      }
-    }
-    else if (OSCpage == 2) { // OSC page 2
-      // Check for new user control parameters
-//      readControlParameters();
-    }
-#if DEBUG==1
-//    Serial.print(throttle);
-//    Serial.print(" ");
-//    Serial.println(steering);
-#endif
-  } // End new OSC message
+//      if ((mode == 0) && (switch_pro))
+//      {
+//        // Change to PRO mode
+//        max_throttle = MAX_THROTTLE_PRO;
+//        max_steering = MAX_STEERING_PRO;
+//        max_target_angle = MAX_TARGET_ANGLE_PRO;
+//        mode = 1;
+//      }
+//      if ((mode == 1) && (!switch_pro))
+//      {
+//        // Change to NORMAL mode
+//        max_throttle = MAX_THROTTLE;
+//        max_steering = MAX_STEERING;
+//        max_target_angle = MAX_TARGET_ANGLE;
+//        mode = 0;
+//      }
+
 
   timer_value = micros();
 
@@ -511,19 +455,6 @@ void loop()
     Serial.println(estimated_speed_filtered);
 #endif
 
-    if (positionControlMode)
-    {
-      // POSITION CONTROL. INPUT: Target steps for each motor. Output: motors speed
-      motor1_control = positionPDControl(steps1, target_steps1, Kp_position, Kd_position, speed_M1);
-      motor2_control = positionPDControl(steps2, target_steps2, Kp_position, Kd_position, speed_M2);
-
-      // Convert from motor position control to throttle / steering commands
-      throttle = (motor1_control + motor2_control) / 2;
-      throttle = constrain(throttle, -190, 190);
-      steering = motor2_control - motor1_control;
-      steering = constrain(steering, -50, 50);
-    }
-
     // ROBOT SPEED CONTROL: This is a PI controller.
     //    input:user throttle(robot speed), variable: estimated robot speed, output: target robot angle to get the desired speed
     target_angle = speedPIControl(dt, estimated_speed_filtered, throttle, Kp_thr, Ki_thr);
@@ -559,9 +490,9 @@ void loop()
     setMotorSpeedK2(constrain(knee2_control, -MAX_CONTROL_OUTPUT, MAX_CONTROL_OUTPUT));
 
     int angle_ready;
-    if (OSCpush[0])     // If we press the SERVO button we start to move
-      angle_ready = 82;
-    else
+//    if (OSCpush[0])     // If we press the SERVO button we start to move
+//      angle_ready = 82;
+//    else
       angle_ready = 74;  // Default angle
     if (bot_enabled && (angle_adjusted < angle_ready) && (angle_adjusted > -angle_ready)) // Is robot ready (upright?)
     {
@@ -592,8 +523,6 @@ void loop()
       // RESET steps
       steps1 = 0;
       steps2 = 0;
-      positionControlMode = false;
-      OSCmove_mode = false;
       throttle = 0;
       steering = 0;
     }
