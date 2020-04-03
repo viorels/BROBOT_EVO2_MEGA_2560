@@ -414,8 +414,8 @@ void loop()
 
     vertical_offset = 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN);
 
-    myservo1.write(constrain(SERVO1_NEUTRAL + servos_offset + 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN), 70, 180));
-    myservo2.write(constrain(SERVO2_NEUTRAL - servos_offset + SERVO2_OFFSET - 90 * (1-abs(steps_k2)/(float)KNEE_HALF_TURN), 0, 110));
+    myservo1.write(constrain(SERVO1_NEUTRAL + (servos_offset - target_angle) + 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN), 70, 180));
+    myservo2.write(constrain(SERVO2_NEUTRAL - (servos_offset - target_angle) + SERVO2_OFFSET - 90 * (1-abs(steps_k2)/(float)KNEE_HALF_TURN), 0, 110));
     if (bot_enabled) {
       SoftwareServo::refresh();
     }
