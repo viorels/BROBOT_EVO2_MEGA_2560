@@ -37,6 +37,7 @@
 SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 #include "AS5047.h"
 #include "FlySkyIBus.h"
+#include "utils.h"
 #include <Telemetry.h>
 
 // ---------- CALIBRATION ----------
@@ -128,7 +129,7 @@ float Kit_old;
 
 #define ANGLE_OFFSET 0.0  // Offset angle for balance (to compensate robot own weight distribution)
 
-#define DEBUG 0   // 0 = No debug info (default) DEBUG 1 for console output
+#define DEBUG 3   // 0 = No debug info (default) DEBUG 1 for console output
 
 // Telemetry
 #define TELEMETRY_DEBUG 0
@@ -158,13 +159,13 @@ float BatteryReal;
 
 long timer_old;
 long timer_value;
+unsigned long timer_rc_receiver = 0;
 float debugVariable;
 float dt;
 
 // Angle of the robot (used for stability control)
 float angle_adjusted;
 float angle_adjusted_Old;
-float angle_adjusted_filtered = 0.0;
 float angle_alpha = 0.05;
 
 // Default control values from constant definitions
@@ -380,7 +381,7 @@ void loop()
   readEncoders();
   syncKneeSteppers(20);  // max tolerated error
   
-  if (IBus.isActive()) {
+  if (wait_time(timer_rc_receiver, 50) && IBus.isActive()) {
     float alpha = 0.2;
     remote_chan1 = IBus.readChannel(0) * alpha + remote_chan1 * (1-alpha);
     remote_chan2 = IBus.readChannel(1) * alpha + remote_chan2 * (1-alpha);
@@ -461,17 +462,13 @@ void loop()
     // Get new orientation angle from IMU (MPU6050)
     float MPU_sensor_angle = MPU6050_getAngle(dt);
     angle_adjusted = MPU_sensor_angle + vertical_offset + angle_offset;
-    if ((MPU_sensor_angle>-15)&&(MPU_sensor_angle<15))
-      angle_adjusted_filtered = angle_adjusted_filtered*(1-angle_alpha) + MPU_sensor_angle*angle_alpha;
       
 #if DEBUG==1
-    Serial.print(dt);
-    Serial.print(" ");
+//    Serial.print(dt);
+//    Serial.print(" ");
     Serial.print(angle_offset);
     Serial.print(" ");
-    Serial.print(angle_adjusted);
-    Serial.print(" ");
-    Serial.println(angle_adjusted_filtered);
+    Serial.println(angle_adjusted);
 #endif
 
 #if TELEMETRY_DEBUG==1
@@ -487,12 +484,6 @@ void loop()
     int16_t estimated_speed = -actual_robot_speed + angular_velocity;
     estimated_speed_filtered = estimated_speed_filtered * 0.9 + (float)estimated_speed * 0.1; // low pass filter on estimated speed
 
-#if DEBUG==2
-    Serial.print(angle_adjusted);
-    Serial.print(" ");
-    Serial.println(estimated_speed_filtered);
-#endif
-
     // ROBOT SPEED CONTROL: This is a PI controller.
     //    input:user throttle(robot speed), variable: estimated robot speed, output: target robot angle to get the desired speed
     target_angle = speedPIControl(dt, estimated_speed_filtered, throttle, Kp_thr, Ki_thr);
@@ -502,9 +493,9 @@ void loop()
 #if DEBUG==3
     Serial.print(angle_adjusted);
     Serial.print(" ");
-    Serial.print(estimated_speed_filtered);
+    Serial.print(target_angle);
     Serial.print(" ");
-    Serial.println(target_angle);
+    Serial.println(estimated_speed_filtered);
 #endif
 
     // Stability control (100Hz loop): This is a PD controller.
