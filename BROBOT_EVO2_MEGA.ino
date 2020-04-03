@@ -41,11 +41,11 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 
 // ---------- CALIBRATION ----------
 
-#define ENC_1_ZERO 2200        // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
-#define ENC_2_ZERO 1210        // leg is crouched, encoder goes up from here
+#define ENC_1_ZERO 2200           // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
+#define ENC_2_ZERO 1210           // leg is crouched, encoder goes up from here
 
-#define SERVO1_NEUTRAL 90 // Servo neutral position in degrees
-#define SERVO1_MIN_PULSE  500
+#define SERVO1_NEUTRAL 90         // Servo neutral position in degrees
+#define SERVO1_MIN_PULSE  500     // DS3225 Pulse width range: 500-2500 μsec
 #define SERVO1_MAX_PULSE  2500
 #define SERVO2_NEUTRAL 90
 #define SERVO2_OFFSET 2
@@ -131,7 +131,7 @@ float Kit_old;
 #define DEBUG 0   // 0 = No debug info (default) DEBUG 1 for console output
 
 // Telemetry
-#define TELEMETRY_DEBUG 1
+#define TELEMETRY_DEBUG 0
 #define TELEMETRY_BATTERY 0
 
 #define ZERO_SPEED 65535
@@ -397,9 +397,8 @@ void loop()
     kPInput = ((float) IBus.readChannel(4)-1000)/500.0;  // normalize between 0 and 2 (-100% / +100%)
     kDInput = ((float) IBus.readChannel(5)-1000)/500.0;
 
-    int microsOffset = remote_chan3 - 1000;  // DS3225 Pulse width range: 500~2500 μsec
+    float height = (remote_chan3 - 1000) / 1000.0f;
     float balanceOffset = (remote_chan4 - 1500) / 500.0 * 0.1;
-    float height = microsOffset / 1000.0f;
 
     float knee_pos = 2 * asin(height) / PI;   // knee angle in range 0.0 - 1.0
     servos_offset = map(knee_pos * 100, 0, 100, 10, -10);
