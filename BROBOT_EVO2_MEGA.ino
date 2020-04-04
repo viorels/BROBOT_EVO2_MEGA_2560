@@ -93,10 +93,10 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 //#define KI_THROTTLE 0.1
 
 // ROBOT MEDIUM (45)
-#define KP 0.24
-#define KD 0.114
-#define KP_THROTTLE 0.080 
-#define KI_THROTTLE 0.1
+#define KP 0.30
+#define KD 0.15
+#define KP_THROTTLE 0.06
+#define KI_THROTTLE 0.0004  // WAS 0.1
 
 // ROBOT LOW
 //#define KP 0.2
