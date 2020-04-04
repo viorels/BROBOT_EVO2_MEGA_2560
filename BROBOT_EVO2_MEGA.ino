@@ -388,9 +388,13 @@ void loop()
     remote_chan3 = IBus.readChannel(2) * alpha + remote_chan3 * (1-alpha);
     remote_chan4 = IBus.readChannel(3) * alpha + remote_chan4 * (1-alpha);
 
-    // TODO: this should ber reversed
+    // TODO: this should not have -1
     steering = -1 * ((remote_chan1 - 1500) / 1000.0) * max_steering;
+    if (fabs(steering) < 5)
+      steering = 0;
     throttle = -1 * ((remote_chan2 - 1500) / 1000.0) * max_throttle;
+    if (fabs(throttle) < 5)
+      throttle = 0;
 
     bot_enabled = IBus.readChannel(6) > 1999;
     switch_pro = IBus.readChannel(7) > 1999;
