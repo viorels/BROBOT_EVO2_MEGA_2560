@@ -42,14 +42,14 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 
 // ---------- CALIBRATION ----------
 
-#define ENC_1_ZERO 2200           // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
-#define ENC_2_ZERO 1210           // leg is crouched, encoder goes up from here
+#define ENC_1_ZERO 2000           // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
+#define ENC_2_ZERO 2000           // leg is crouched, encoder goes up from here --- FORWARD is SMALLER
 
 #define SERVO1_NEUTRAL 90         // Servo neutral position in degrees
 #define SERVO1_MIN_PULSE  500     // DS3225 Pulse width range: 500-2500 μsec
 #define SERVO1_MAX_PULSE  2500
 #define SERVO2_NEUTRAL 90
-#define SERVO2_OFFSET 2
+#define SERVO2_OFFSET 1
 #define SERVO2_MIN_PULSE  500
 #define SERVO2_MAX_PULSE  2500
 
@@ -285,7 +285,8 @@ void setup()
   MPU6050_setup();  // setup MPU6050 IMU
 
   // Calibrate gyros, pass 0 to force calibration
-  MPU6050_calibrate(-295);
+//  MPU6050_calibrate(-295);
+  MPU6050_calibrate(0);   // -8 .. -25
 
   // Init servos
   Serial.println("Servo init");
@@ -381,7 +382,7 @@ void loop()
   readEncoders();
   syncKneeSteppers(20);  // max tolerated error
   
-  if (wait_time(timer_rc_receiver, 50) && IBus.isActive()) {
+  if (wait_time(timer_rc_receiver, 10) && IBus.isActive()) {
     float alpha = 0.2;
     remote_chan1 = IBus.readChannel(0) * alpha + remote_chan1 * (1-alpha);
     remote_chan2 = IBus.readChannel(1) * alpha + remote_chan2 * (1-alpha);
@@ -407,15 +408,12 @@ void loop()
 
     float knee_pos = 2 * asin(height) / PI;   // knee angle in range 0.0 - 1.0
     servos_offset = map(knee_pos * 100, 0, 100, 10, -10);
-    angle_offset = pow(1 - knee_pos, 2) * 30;
-
-#if TELEMETRY_DEBUG==1
-//      Telemetry.pub_f32("p", knee_pos);
-#endif
+    angle_offset = pow(0.9 - knee_pos, 2) * 36 - 4;   // offset curve depending on height, positive leans to front
 
     target_steps_k1 = constrain((knee_pos + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
     target_steps_k2 = constrain((knee_pos - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
 
+    // TODO: use steps_k1 BUT smoothed ?!
     vertical_offset = 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN);
 
     myservo1.write(constrain(SERVO1_NEUTRAL + (servos_offset - target_angle) + 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN), 70, 180));
