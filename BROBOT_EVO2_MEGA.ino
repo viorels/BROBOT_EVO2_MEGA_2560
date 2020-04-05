@@ -22,11 +22,6 @@
 // MPU6050 IMU connected via I2C bus. Angle estimation using complementary filter (fusion between gyro and accel)
 // Angle calculations and control part is running at 100Hz
 
-// The robot is OFF when the angle is high (robot is horizontal). When you start raising the robot it
-// automatically switch ON and start a RAISE UP procedure.
-// You could RAISE UP the robot also with the robot arm servo (Servo button on the interface)
-// To switch OFF the robot you could manually put the robot down on the floor (horizontal)
-
 // We use a standard PID controllers (Proportional, Integral derivative controller) for robot stability
 // More info on the project page: How it works page at jjrobots.com
 // We have a PI controller for speed control and a PD controller for stability (robot angle)
@@ -39,6 +34,12 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 #include "FlySkyIBus.h"
 #include "utils.h"
 #include <Telemetry.h>
+
+#define DEBUG 5   // 0 = No debug info (default) DEBUG 1 for console output
+
+// Telemetry
+#define TELEMETRY_DEBUG 0
+#define TELEMETRY_BATTERY 0
 
 // ---------- CALIBRATION ----------
 
@@ -129,12 +130,6 @@ float Kit_old;
 
 #define ANGLE_OFFSET 0.0  // Offset angle for balance (to compensate robot own weight distribution)
 
-#define DEBUG 3   // 0 = No debug info (default) DEBUG 1 for console output
-
-// Telemetry
-#define TELEMETRY_DEBUG 0
-#define TELEMETRY_BATTERY 0
-
 #define ZERO_SPEED 65535
 #define MAX_ACCEL 14      // Maximun motor acceleration (MAX RECOMMENDED VALUE: 20) (default:14)
 
@@ -177,11 +172,6 @@ float Kp_user = KP;
 float Kd_user = KD;
 float Kp_thr_user = KP_THROTTLE;
 float Ki_thr_user = KI_THROTTLE;
-float Kp_position = KP_POSITION;
-float Kd_position = KD_POSITION;
-bool newControlParameters = false;
-int16_t position_error_sum_M1;
-int16_t position_error_sum_M2;
 float PID_errorSum;
 float PID_errorOld = 0;
 float PID_errorOld2 = 0;
@@ -198,8 +188,6 @@ float control_output;
 float vertical_offset = 0;
 float angle_offset = ANGLE_OFFSET;
 float servos_offset = 0;
-
-uint8_t mode;  // mode = 0 Normal mode, mode = 1 Pro mode (More agressive)
 
 int16_t motor1;
 int16_t motor2;
@@ -403,12 +391,26 @@ void loop()
     kPInput = ((float) IBus.readChannel(4)-1000)/500.0;  // normalize between 0 and 2 (-100% / +100%)
     kDInput = ((float) IBus.readChannel(5)-1000)/500.0;
 
+    if (switch_pro) {
+      // Change to PRO mode
+      max_throttle = MAX_THROTTLE_PRO;
+      max_steering = MAX_STEERING_PRO;
+      max_target_angle = MAX_TARGET_ANGLE_PRO;
+    }
+    else {
+      // Change to NORMAL mode
+      max_throttle = MAX_THROTTLE;
+      max_steering = MAX_STEERING;
+      max_target_angle = MAX_TARGET_ANGLE;
+    }
+
     float height = (remote_chan3 - 1000) / 1000.0f;
     float balanceOffset = (remote_chan4 - 1500) / 500.0 * 0.1;
 
     float knee_pos = 2 * asin(height) / PI;   // knee angle in range 0.0 - 1.0
     servos_offset = map(knee_pos * 100, 0, 100, 10, -10);
-    angle_offset = pow(0.9 - knee_pos, 2) * 36 - 4;   // offset curve depending on height, positive leans to front
+    // TODO: compute angle_offset based on REAL knee pos, not target knee_pos
+    angle_offset = pow(0.9 - knee_pos, 2) * 36 - 5;   // offset curve depending on height, positive leans to front
 
     target_steps_k1 = constrain((knee_pos + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
     target_steps_k2 = constrain((knee_pos - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
@@ -431,23 +433,6 @@ void loop()
 //        else
 //          steering = (-steering * steering + 0.5 * steering) * max_steering;
 
-//      if ((mode == 0) && (switch_pro))
-//      {
-//        // Change to PRO mode
-//        max_throttle = MAX_THROTTLE_PRO;
-//        max_steering = MAX_STEERING_PRO;
-//        max_target_angle = MAX_TARGET_ANGLE_PRO;
-//        mode = 1;
-//      }
-//      if ((mode == 1) && (!switch_pro))
-//      {
-//        // Change to NORMAL mode
-//        max_throttle = MAX_THROTTLE;
-//        max_steering = MAX_STEERING;
-//        max_target_angle = MAX_TARGET_ANGLE;
-//        mode = 0;
-//      }
-
 
   timer_value = micros();
 
@@ -466,11 +451,13 @@ void loop()
     angle_adjusted = MPU_sensor_angle + vertical_offset + angle_offset;
       
 #if DEBUG==1
-//    Serial.print(dt);
-//    Serial.print(" ");
-    Serial.print(angle_offset);
+    Serial.print(dt);
     Serial.print(" ");
-    Serial.println(angle_adjusted);
+    Serial.print(angle_adjusted);
+    Serial.print(" ");
+    Serial.print(target_angle);
+    Serial.print(" ");
+    Serial.println(Kp);
 #endif
 
 #if TELEMETRY_DEBUG==1
@@ -486,18 +473,34 @@ void loop()
     int16_t estimated_speed = -actual_robot_speed + angular_velocity;
     estimated_speed_filtered = estimated_speed_filtered * 0.9 + (float)estimated_speed * 0.1; // low pass filter on estimated speed
 
+#if DEBUG==2
+    Serial.print(dt);
+    Serial.print(" ");
+    Serial.print(estimated_speed_filtered);
+    Serial.print(" ");
+    Serial.print(throttle);
+#endif
+
     // ROBOT SPEED CONTROL: This is a PI controller.
     //    input:user throttle(robot speed), variable: estimated robot speed, output: target robot angle to get the desired speed
     target_angle = speedPIControl(dt, estimated_speed_filtered, throttle, Kp_thr, Ki_thr);
     target_angle = constrain(target_angle, -max_target_angle, max_target_angle); // limited output
 
-
-#if DEBUG==3
-    Serial.print(angle_adjusted);
+#if DEBUG==2
     Serial.print(" ");
     Serial.print(target_angle);
     Serial.print(" ");
-    Serial.println(estimated_speed_filtered);
+    Serial.print(kPInput);
+    Serial.print(" ");
+    Serial.println(kDInput);
+#endif
+
+#if DEBUG==3
+    Serial.print(angle_offset);
+    Serial.print("\t");
+    Serial.print(angle_adjusted);
+    Serial.print("\t");
+    Serial.println(target_angle);
 #endif
 
     // Stability control (100Hz loop): This is a PD controller.
@@ -519,6 +522,14 @@ void loop()
     setMotorSpeedK1(constrain(knee1_control, -MAX_CONTROL_OUTPUT, MAX_CONTROL_OUTPUT));
     knee2_control = positionPDControl(steps_k2, target_steps_k2, KNEE_KP, KNEE_KD, speed_k2);
     setMotorSpeedK2(constrain(knee2_control, -MAX_CONTROL_OUTPUT, MAX_CONTROL_OUTPUT));
+
+#ifdef DEBUG==5
+    Serial.print(steps_k1/10);
+    Serial.print("\t");
+    Serial.print(knee1_control);
+    Serial.print("\t");
+    Serial.println(speed_k1);
+#endif
 
     int angle_ready;
 //    if (OSCpush[0])     // If we press the SERVO button we start to move
@@ -629,20 +640,39 @@ void loop()
   }  // End of slow loop
 }
 
+int kneeEnc1, kneeEnc2;
+
 void readEncoders() {
+  // noise is about +-2 clicks
+  // one full step causes a change of ~9.1 clicks on encoder
+
   float alpha = 0.1;
+
+  // TODO: extend range to allow overflow to negative and over 2^14
   AS5047_Read(encoder1, CMD_R_ANGLECOM);
-  float newAngle1 = (encoder1.data.ANGLECOM.DAECANG - ENC_1_ZERO) / ENCODER_FULL_TURN * 360;
+  kneeEnc1 = encoder1.data.ANGLECOM.DAECANG - ENC_1_ZERO;
+  float newAngle1 = kneeEnc1 / ENCODER_FULL_TURN * 360;
   kneeAngle1 = alpha * newAngle1 + (1-alpha) * kneeAngle1;
 
+  float oneStep = 9.102222222;
+  float rest1 = kneeEnc1 - round(((int)(kneeEnc1 / oneStep)) * oneStep);
+
   AS5047_Read(encoder2, CMD_R_ANGLECOM);
-  float newAngle2 = (encoder2.data.ANGLECOM.DAECANG - ENC_2_ZERO) / ENCODER_FULL_TURN * 360;
+  kneeEnc2 = encoder2.data.ANGLECOM.DAECANG - ENC_2_ZERO;
+  float newAngle2 = kneeEnc2 / ENCODER_FULL_TURN * 360;
   kneeAngle2 = alpha * newAngle2 + (1-alpha) * kneeAngle2;
-/*
-  Serial.print(kneeAngle1);
+
+  float rest2 = kneeEnc2 - round(((int)(kneeEnc2 / oneStep)) * oneStep);
+  
+#if DEBUG==4
+  Serial.print(kneeEnc1);
   Serial.print("\t");
-  Serial.println(kneeAngle2);
-*/
+  Serial.print(rest1);
+  Serial.print("\t");
+  Serial.print(kneeEnc2);
+  Serial.print("\t");
+  Serial.println(rest2);
+#endif
 };
 
 float avgDiff1 = 1;
@@ -651,7 +681,7 @@ void syncKneeSteppers(int tolerance) {
   int expectedSteps1 = round(kneeAngle1 / 360 * KNEE_FULL_TURN);
   int expectedSteps2 = round(kneeAngle2 / 360 * KNEE_FULL_TURN);
 
-  int diff1 = steps_k1 - expectedSteps1;
+  int diff1 = expectedSteps1 - steps_k1;
   float alpha = 0.01;
   avgDiff1 = alpha * diff1 + (1-alpha) * avgDiff1;
 /*
@@ -664,9 +694,11 @@ void syncKneeSteppers(int tolerance) {
 */
 //  tolerance = 100; // OVERRIDE TOLERANCE
 
-  if (abs(steps_k1 - expectedSteps1) > tolerance) {
+  // TODO: adjust steps_k1/2 in multiple of KNEE_MICROSTEPPING
+
+  if (abs(expectedSteps1 - steps_k1) > tolerance) {
 //    Serial.print(steps_k1 - expectedSteps1);
-    steps_k1 = expectedSteps1;
+    steps_k1 = steps_k1 + round((expectedSteps1 - steps_k1) / KNEE_MICROSTEPPING) * KNEE_MICROSTEPPING;
 //    steps_k1 -= 2 * (steps_k1 - expectedSteps1);
 //    setMotorSpeedK1(0);
   }
@@ -675,7 +707,7 @@ void syncKneeSteppers(int tolerance) {
 //    Serial.print(dampen_k1);
   }
 
-  if (abs(steps_k2 - expectedSteps2) > tolerance) {
+  if (abs(expectedSteps2 - steps_k2) > tolerance) {
     steps_k2 = expectedSteps2;
 //    setMotorSpeedK2(0);
   }
