@@ -35,7 +35,7 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 #include "utils.h"
 #include <Telemetry.h>
 
-#define DEBUG 5   // 0 = No debug info (default) DEBUG 1 for console output
+#define DEBUG 2   // 0 = No debug info (default) DEBUG 1 for console output
 
 // Telemetry
 #define TELEMETRY_DEBUG 0
@@ -481,11 +481,11 @@ void loop()
     estimated_speed_filtered = estimated_speed_filtered * 0.95 + (float)estimated_speed * 0.05; // low pass filter on estimated speed
 
 #if DEBUG==2
-    Serial.print(dt);
-    Serial.print(" ");
+    Serial.print(actual_robot_speed);
+    Serial.print("\t");
+    Serial.print(angular_velocity);
+    Serial.print("\t");
     Serial.print(estimated_speed_filtered);
-    Serial.print(" ");
-    Serial.print(throttle);
 #endif
 
     // ROBOT SPEED CONTROL: This is a PI controller.
@@ -494,12 +494,12 @@ void loop()
     target_angle = constrain(target_angle, -max_target_angle, max_target_angle); // limited output
 
 #if DEBUG==2
-    Serial.print(" ");
+    Serial.print("\t");
     Serial.print(target_angle);
-    Serial.print(" ");
-    Serial.print(kPInput);
-    Serial.print(" ");
-    Serial.println(kDInput);
+    Serial.print("\t");
+    Serial.print(knob1);
+    Serial.print("\t");
+    Serial.println(knob2);
 #endif
 
 #if DEBUG==3
@@ -524,13 +524,13 @@ void loop()
     motor1 = constrain(motor1, -MAX_CONTROL_OUTPUT, MAX_CONTROL_OUTPUT);
     motor2 = constrain(motor2, -MAX_CONTROL_OUTPUT, MAX_CONTROL_OUTPUT);
 
-    // Knees
+    // Knees; maybe increase kP * 1.2 for more agility (also constraint in positionPDControl), kD is fine
     knee1_control = positionPDControl(steps_k1, target_steps_k1, KNEE_KP, KNEE_KD, speed_k1);
     setMotorSpeedK1(constrain(knee1_control, -MAX_CONTROL_OUTPUT, MAX_CONTROL_OUTPUT));
     knee2_control = positionPDControl(steps_k2, target_steps_k2, KNEE_KP, KNEE_KD, speed_k2);
     setMotorSpeedK2(constrain(knee2_control, -MAX_CONTROL_OUTPUT, MAX_CONTROL_OUTPUT));
 
-#ifdef DEBUG==5
+#if DEBUG==5
     Serial.print(steps_k1/10);
     Serial.print("\t");
     Serial.print(knee1_control);
