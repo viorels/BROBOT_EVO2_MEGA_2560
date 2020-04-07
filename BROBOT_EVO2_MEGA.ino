@@ -87,33 +87,16 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 //#define KP_THROTTLE 0.080
 //#define KI_THROTTLE 0.1
 
-// ROBOT TALL
-//#define KP 0.27
-//#define KD 0.138
-//#define KP_THROTTLE 0.080
-//#define KI_THROTTLE 0.1
-
 // ROBOT MEDIUM (45)
-#define KP 0.30
-#define KD 0.15
-#define KP_THROTTLE 0.06
-#define KI_THROTTLE 0.0004  // WAS 0.1
-
-// ROBOT LOW
-//#define KP 0.2
-//#define KD 0.1
-//#define KP_THROTTLE 0.080
-//#define KI_THROTTLE 0.1
-
+#define KP 1
+#define KD 0.07  // best 0.07 to avoid noise
+#define KP_THROTTLE 0.03  // 0.06 was OKish
+#define KI_THROTTLE 0.05  // was 0.1
 
 float Kpu_old;
 float Kdu_old;
 float Kpt_old;
 float Kit_old;
-
-#define KP_POSITION 0.06  
-#define KD_POSITION 0.45  
-//#define KI_POSITION 0.02
 
 #define KNEE_KP 0.10  // 0.15 / 0.6 is best
 #define KNEE_KD 0.5
