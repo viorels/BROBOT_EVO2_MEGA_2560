@@ -188,7 +188,7 @@ int8_t  dir_M1, dir_M2;            // Actual direction of steppers motors
 int16_t actual_robot_speed;        // overall robot speed (measured from steppers speed)
 int16_t actual_robot_speed_Old;
 float estimated_speed_filtered;    // Estimated robot speed
-float height;
+float target_height;
 
 // Knee
 int16_t speed_k1, speed_k2;        // Actual speed of motors
@@ -408,19 +408,14 @@ void loop()
       max_target_angle = MAX_TARGET_ANGLE;
     }
 
-    height = (remote_chan3 - 1000) / 1000.0f;
+    target_height = (remote_chan3 - 1000) / 1000.0f;
     float balanceOffset = (remote_chan4 - 1500) / 500.0 * 0.1;
 
-    float knee_pos = 2 * asin(height) / PI;   // knee angle in range 0.0 - 1.0
+    float knee_pos = 2 * asin(target_height) / PI;   // knee angle in range 0.0 - 1.0
     servos_offset = map(knee_pos * 100, 0, 100, 10, -10);
-    // TODO: compute angle_offset based on REAL knee pos, not target knee_pos
-    angle_offset = pow(0.9 - knee_pos, 2) * 36 - 8;   // offset curve depending on height, positive leans to front
 
     target_steps_k1 = constrain((knee_pos + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
     target_steps_k2 = constrain((knee_pos - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
-
-    // TODO: use steps_k1 BUT smoothed ?!
-    vertical_offset = 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN);
 
     myservo1.write(constrain(SERVO1_NEUTRAL + (servos_offset - target_angle) + 90 * (1-abs(steps_k1)/(float)KNEE_HALF_TURN), 70, 180));
     myservo2.write(constrain(SERVO2_NEUTRAL - (servos_offset - target_angle) + SERVO2_OFFSET - 90 * (1-abs(steps_k2)/(float)KNEE_HALF_TURN), 0, 110));
@@ -437,7 +432,6 @@ void loop()
 //        else
 //          steering = (-steering * steering + 0.5 * steering) * max_steering;
 
-
   timer_value = micros();
 
   // New IMU data?
@@ -452,8 +446,12 @@ void loop()
     angle_adjusted_Old = angle_adjusted;
     // Get new orientation angle from IMU (MPU6050)
     float MPU_sensor_angle = MPU6050_getAngle(dt);
+
+    float real_knee_pos_left = 1 - abs(steps_k1) / (float)KNEE_HALF_TURN;
+    vertical_offset = 90 * real_knee_pos_left;  // thigh angle for left foot, where the gyro is mounted
+    angle_offset = pow(0.9 - real_knee_pos_left, 2) * 36 - 8;   // offset curve depending on knee range, positive leans to front
     angle_adjusted = MPU_sensor_angle + vertical_offset + angle_offset;
-      
+
 #if DEBUG==1
     Serial.print(dt);
     Serial.print(" ");
@@ -475,7 +473,7 @@ void loop()
     actual_robot_speed = 0.25 * (speed_M1 + speed_M2) / 2 + 0.75 * actual_robot_speed; // Positive: forward!
 
     // Angular velocity, positive: backward!
-    int16_t angular_velocity = (angle_adjusted - angle_adjusted_Old) * (50 + 75 * height); // an empirical extracted factor to adjust for real units
+    int16_t angular_velocity = (angle_adjusted - angle_adjusted_Old) * (50 + 75 * target_height); // an empirical extracted factor to adjust for real units
 
     int16_t estimated_speed = -actual_robot_speed + angular_velocity;
     estimated_speed_filtered = estimated_speed_filtered * 0.95 + (float)estimated_speed * 0.05; // low pass filter on estimated speed
