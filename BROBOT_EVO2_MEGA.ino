@@ -43,8 +43,8 @@ SoftwareServo myservo1,myservo2;  // create servo object to control two servos
 
 // ---------- CALIBRATION ----------
 
-#define ENC_1_ZERO 2000           // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
-#define ENC_2_ZERO 2000           // leg is crouched, encoder goes up from here --- FORWARD is SMALLER
+#define ENC_1_ZERO 0           // leg is crouched, encoder goes up from here (dirrection WILL CHANGE with back encoder)
+#define ENC_2_ZERO 0           // leg is crouched, encoder goes up from here --- FORWARD is SMALLER
 
 #define SERVO1_NEUTRAL 90         // Servo neutral position in degrees
 #define SERVO1_MIN_PULSE  500     // DS3225 Pulse width range: 500-2500 μsec
@@ -213,6 +213,8 @@ volatile int32_t steps_k1;
 volatile int32_t steps_k2;
 int knee1_control = 0, knee2_control = 0;
 int target_steps_k1, target_steps_k2;
+int enc1_zero = 0, enc2_zero = 0;
+int kneeEnc1, kneeEnc2;
 float kneeAngle1, kneeAngle2;
 float dampen_k1 = 0, dampen_k2 = 0;
 
@@ -291,6 +293,24 @@ void setup()
   AS5047_SPI_Init();
   AS5047_Init(encoder1);
   AS5047_Init(encoder2);
+
+  if (ENC_1_ZERO == 0 || ENC_2_ZERO == 0) {
+    readEncoders();
+    enc1_zero = kneeEnc1;
+    enc2_zero = kneeEnc2;
+    Serial.print("Encoders: ");
+    Serial.print(enc1_zero);
+    Serial.print(" ");
+    Serial.println(enc2_zero);
+    if (enc1_zero < 1000 || enc1_zero > ENCODER_FULL_TURN / 2 || enc2_zero < 1000 || enc2_zero > ENCODER_FULL_TURN / 2) {
+      Serial.println("Encoders out of range!");
+      while (1) {};   // HALT !!!
+    }
+  }
+  else {
+    enc1_zero = ENC_1_ZERO;
+    enc2_zero = ENC_2_ZERO;
+  }
 
   // STEPPER MOTORS INITIALIZATION
   Serial.println("Steppers init");
@@ -640,8 +660,6 @@ void loop()
   }  // End of slow loop
 }
 
-int kneeEnc1, kneeEnc2;
-
 void readEncoders() {
   // noise is about +-2 clicks
   // one full step causes a change of ~9.1 clicks on encoder
@@ -650,7 +668,7 @@ void readEncoders() {
 
   // TODO: extend range to allow overflow to negative and over 2^14
   AS5047_Read(encoder1, CMD_R_ANGLECOM);
-  kneeEnc1 = encoder1.data.ANGLECOM.DAECANG - ENC_1_ZERO;
+  kneeEnc1 = encoder1.data.ANGLECOM.DAECANG - enc1_zero;
   float newAngle1 = kneeEnc1 / ENCODER_FULL_TURN * 360;
   kneeAngle1 = alpha * newAngle1 + (1-alpha) * kneeAngle1;
 
@@ -658,7 +676,7 @@ void readEncoders() {
   float rest1 = kneeEnc1 - round(((int)(kneeEnc1 / oneStep)) * oneStep);
 
   AS5047_Read(encoder2, CMD_R_ANGLECOM);
-  kneeEnc2 = encoder2.data.ANGLECOM.DAECANG - ENC_2_ZERO;
+  kneeEnc2 = encoder2.data.ANGLECOM.DAECANG - enc2_zero;
   float newAngle2 = kneeEnc2 / ENCODER_FULL_TURN * 360;
   kneeAngle2 = alpha * newAngle2 + (1-alpha) * kneeAngle2;
 
