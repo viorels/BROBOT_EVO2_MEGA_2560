@@ -188,6 +188,7 @@ int8_t  dir_M1, dir_M2;            // Actual direction of steppers motors
 int16_t actual_robot_speed;        // overall robot speed (measured from steppers speed)
 int16_t actual_robot_speed_Old;
 float estimated_speed_filtered;    // Estimated robot speed
+float height;
 
 // Knee
 int16_t speed_k1, speed_k2;        // Actual speed of motors
@@ -209,7 +210,7 @@ int remote_chan1 = 1500;  // turn left/right
 int remote_chan2 = 1500;  // forward/back
 int remote_chan3 = 1000;  // up/down
 int remote_chan4 = 1500;  // balance?
-float kPInput = 1, kDInput = 1;
+float knob1 = 1, knob2 = 1;
 
 tAS5047 encoder1 = { .selectPin = ENC_1_SELECT };
 tAS5047 encoder2 = { .selectPin = ENC_2_SELECT };
@@ -391,8 +392,8 @@ void loop()
     bot_enabled = IBus.readChannel(6) > 1999;
     switch_pro = IBus.readChannel(7) > 1999;
 
-    kPInput = ((float) IBus.readChannel(4)-1000)/500.0;  // normalize between 0 and 2 (-100% / +100%)
-    kDInput = ((float) IBus.readChannel(5)-1000)/500.0;
+    knob1 = ((float) IBus.readChannel(4)-1000)/500.0;  // normalize between 0 and 2 (-100% / +100%)
+    knob2 = ((float) IBus.readChannel(5)-1000)/500.0;
 
     if (switch_pro) {
       // Change to PRO mode
@@ -407,13 +408,13 @@ void loop()
       max_target_angle = MAX_TARGET_ANGLE;
     }
 
-    float height = (remote_chan3 - 1000) / 1000.0f;
+    height = (remote_chan3 - 1000) / 1000.0f;
     float balanceOffset = (remote_chan4 - 1500) / 500.0 * 0.1;
 
     float knee_pos = 2 * asin(height) / PI;   // knee angle in range 0.0 - 1.0
     servos_offset = map(knee_pos * 100, 0, 100, 10, -10);
     // TODO: compute angle_offset based on REAL knee pos, not target knee_pos
-    angle_offset = pow(0.9 - knee_pos, 2) * 36 - 5;   // offset curve depending on height, positive leans to front
+    angle_offset = pow(0.9 - knee_pos, 2) * 36 - 8;   // offset curve depending on height, positive leans to front
 
     target_steps_k1 = constrain((knee_pos + balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
     target_steps_k2 = constrain((knee_pos - balanceOffset) * KNEE_HALF_TURN, 0, KNEE_HALF_TURN);
@@ -489,7 +490,7 @@ void loop()
 
     // ROBOT SPEED CONTROL: This is a PI controller.
     //    input:user throttle(robot speed), variable: estimated robot speed, output: target robot angle to get the desired speed
-    target_angle = speedPIControl(dt, estimated_speed_filtered, throttle, Kp_thr, Ki_thr);
+    target_angle = speedPIControl(dt, estimated_speed_filtered, throttle, Kp_thr, Ki_thr * knob1);
     target_angle = constrain(target_angle, -max_target_angle, max_target_angle); // limited output
 
 #if DEBUG==2
@@ -512,7 +513,7 @@ void loop()
     // Stability control (100Hz loop): This is a PD controller.
     //    input: robot target angle(from SPEED CONTROL), variable: robot angle, output: Motor speed
     //    We integrate the output (sumatory), so the output is really the motor acceleration, not motor speed.
-    control_output += stabilityPDControl(dt, angle_adjusted, target_angle, Kp * kPInput, Kd * kDInput);
+    control_output += stabilityPDControl(dt, angle_adjusted, target_angle, Kp, Kd * knob2);
     control_output = constrain(control_output, -MAX_CONTROL_OUTPUT, MAX_CONTROL_OUTPUT); // Limit max output from control
 
     // The steering part from the user is injected directly to the output
