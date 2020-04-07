@@ -487,11 +487,14 @@ void loop()
 
     // We calculate the estimated robot speed:
     // Estimated_Speed = angular_velocity_of_stepper_motors(combined) - angular_velocity_of_robot(angle measured by IMU)
-    actual_robot_speed = (speed_M1 + speed_M2) / 2; // Positive: forward  
+    // Delay using a low pass filter so it is in phase with angular_velocity
+    actual_robot_speed = 0.25 * (speed_M1 + speed_M2) / 2 + 0.75 * actual_robot_speed; // Positive: forward!
 
-    int16_t angular_velocity = (angle_adjusted - angle_adjusted_Old) * 25.0; // 25 is an empirical extracted factor to adjust for real units
+    // Angular velocity, positive: backward!
+    int16_t angular_velocity = (angle_adjusted - angle_adjusted_Old) * (50 + 75 * height); // an empirical extracted factor to adjust for real units
+
     int16_t estimated_speed = -actual_robot_speed + angular_velocity;
-    estimated_speed_filtered = estimated_speed_filtered * 0.9 + (float)estimated_speed * 0.1; // low pass filter on estimated speed
+    estimated_speed_filtered = estimated_speed_filtered * 0.95 + (float)estimated_speed * 0.05; // low pass filter on estimated speed
 
 #if DEBUG==2
     Serial.print(dt);
